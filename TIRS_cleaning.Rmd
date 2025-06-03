@@ -1,0 +1,147 @@
+---
+title: "TIRS"
+author: "Evelyn Shi"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(stringr)
+library(readr)
+library(sp)
+library(geosphere)
+```
+
+Import data
+```{r}
+# import TIRS_SISNAVE data for all possible cases 
+suspected_cases <- 
+  read.csv("original data/TIRS_SINAVE_combined22_23_blockID.csv")
+
+# import mosquito data
+en2 <- read.csv("original data/EN2.csv")
+
+# import enrollment data: initial survey and informed consent
+rn1 <- read.csv("original data/RN1.csv")
+rn2 <- read.csv("original data/RN2.csv")
+
+# import prospective survey
+so1 <- read.csv("original data/SO1.csv")
+```
+
+Take relevant data from each file
+```{r}
+## cases only
+case_data <- suspected_cases[suspected_cases$Diagnosis != "Negativo",]
+
+## treatment assignment for each household
+trt_assign <- arms_blocks %>% 
+  group_by(record_id) %>%
+  summarize(arm = mean(a_arm),
+            block = mean(a_block))
+
+```
+
+
+
+check out data [cases]
+  - can we go by lat/lon? seems like yes -- there are households that have both sources so should be fine
+```{r}
+# households (unique lat/lon) with multiple cases?
+case_data %>% 
+  group_by(lon, lat) %>%
+  summarize(count = n(), .groups = 'keep') %>%
+  filter(count != 1)
+
+# does lat/lon work? are there any coordinates that have cases from both sources?
+have_both_sources <- case_data %>%
+  distinct(lon, lat, Source) %>%
+  count(lon, lat) %>%
+  filter(n == 2)
+## see which households those are -- just to check
+case_data %>%
+  semi_join(have_both_sources, by = c("lon","lat")) %>%
+  arrange(lon, lat) %>%
+  select(Source, ID, lat, lon)
+## number of cases in those households
+case_data %>%
+  semi_join(have_both_sources, by = c("lon","lat")) %>%
+  group_by(lat, lon) %>%
+  summarize(cases_per_household = n(), .groups = 'drop')
+```
+
+  - ok wait but what about all the households that just had adult cases?
+```{r}
+# all SINAVE cases
+case_data %>%
+  filter(Source == "SINAVE")
+
+# how do these record IDs work???
+## find record_id, see how many distinct lat/lon values for each
+## these seem to have distinct lon/lat values but the same record_id...should return 0 rows
+case_data %>%
+  filter(Source == "TIRS") %>%
+  mutate(record_id = str_sub(ID, 1,6)) %>% # take the record_id 
+  distinct(record_id, lon, lat) %>%
+  count(record_id) %>%
+  filter(n > 1) 
+
+## take a look at which
+case_data %>%
+ # filter(Source == "TIRS") %>%
+  mutate(record_id = str_sub(ID, 1,6)) %>% 
+  filter(abs(lat - 20.97713) < 0.00001) %>%
+  select(Year, Source, Age, ID, lon, lat)
+
+## same ID different lat/lon
+case_data %>%
+  filter(ID == "113319D") %>%
+  select(Year, Source, ID, Age, Diagnosis, lon, lat)
+## difference between those lat lon coordinates is 7408.117m 
+distm(c(-89.65301, 20.98745), c(-89.68157, 20.92648), fun = distHaversine)
+  
+  # select(ID, lon, lat, record_id) %>% 
+  # group_by(record_id) %>%
+  # summarize(cases_by_house = n()) %>%
+  # filter(cases_by_house > 1) %>%
+  # select(lat, lon, record_id, cases_by_house)
+
+
+
+str_sub("495113C", 1,6)
+```
+
+
+  - more general info
+```{r}
+# household cases // hh cases, distrib of cases per hh
+case_data %>% 
+  group_by(lon, lat) %>%
+  summarize(cases_per_household = n(), .groups = 'keep') %>%
+  group_by(cases_per_household) %>%
+  summarize(count = n(), .groups = 'drop')
+```
+  
+check out data [arms-blocks]
+```{r}
+# check to make sure all instances of each household have the same arm and block (no data entry errors)
+trt_assign <- arms_blocks %>% 
+  group_by(record_id) %>%
+  summarize(arm = mean(a_arm),
+            block = mean(a_block))
+
+# missing data? -- keep for now?
+arms_blocks %>%
+  select(a_arm, a_block, record_id) %>%
+  summarize(across(everything(), ~sum(is.na(.))))
+## where
+which(is.na(arms_blocks$a_arm))
+## look -- house ID is 192820
+arms_blocks[580,c(1,6,7)]
+
+unique(trt_assign$arm) # missing data???
+unique(trt_assign$block)
+```
+  
+  
