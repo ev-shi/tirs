@@ -1,0 +1,268 @@
+---
+title: "TIRS"
+author: "Evelyn Shi"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(stringr)
+```
+
+# Import data
+```{r}
+# import TIRS_SISNAVE data for all possible cases 
+suspected_cases <- 
+  read.csv("data/TIRS_SINAVE_combined22_23_blockID.csv")
+
+# import enrollment data: initial survey, informed consent and prospective survey
+rn1 <- read.csv("data/RN1.csv")
+rn2 <- read.csv("data/RN2.csv")
+so1 <- read.csv("data/SO1.csv")
+
+# import demographic data for SINAVE cases
+moh <- read.csv("data/Sex_SINAVE.csv")
+
+# import entomological and spraying coverage info
+coverage <- read.csv("data/TIRS coverage.csv")
+ento <- read.csv("data/TIRS_database_entom_summ.csv")
+```
+
+# Data Exploration
+## RN1
+Cluster-level information, information on all households whether or not they joined the study
+### Number of blocks?
+```{r}
+# initial consent form RN1
+rn1 <- rn1 %>% 
+  mutate(clrblk_id = str_sub(record_id, 1,4)) 
+
+# number of unique blocks in the study
+length(unique(rn1$clrblk_id))
+
+# number of clusters just to double check
+length(unique(rn1$cl_nr))
+```
+1529 blocks in the study, 54 unique cluster numbers...
+
+### Number of people in a block?
+```{r}
+## number of all residential houses in a given block
+num_res_houses <- rn1 %>% # id by block
+  filter(rn1_rsdnt == 1) %>% # only residential houses
+  group_by(clrblk_id) %>%
+  summarize(count = n()) 
+```
+So we can find number of residential houses on a given block (see num_res_houses) but we only know the number of children within the household, nothing on adults.
+
+### Number of children by block
+```{r}
+## all data, only residential houses
+only_res <- subset(rn1, rn1_rsdnt == 1)
+
+## check for missing data/see how many kids per house?
+unique(only_res$rn1_kids_nr)
+```
+Some residences with 8 or 10 kids?
+```{r}
+# info on residences with more than three kids between 2-15
+only_res %>%
+  filter(rn1_kids_nr > 3) %>%
+  arrange(rn1_kids_nr)
+
+# distribution of kids per house
+only_res %>%
+  group_by(rn1_kids_nr) %>%
+  summarize(count = n())
+```
+Does this look normal? Are there often many kids in one house?
+Houses with 8 or more children are in blocks 3432, 5112, 5413, and 4322
+
+Back to number of children per block
+```{r}
+# number of kids per block
+kids_per_block <- only_res %>% 
+  group_by(clrblk_id) %>%
+  summarize(kids_per_block = sum(rn1_kids_nr))
+
+# distribution of kids per block
+kids_per_block %>%
+  group_by(kids_per_block) %>%
+  summarize(count = n())
+
+# which ids?
+kids_per_block %>% 
+  filter(kids_per_block > 50)
+```
+Some blocks have 76 children?? Blocks 3316, 3317, and 3319 all have over 50 kids...all from the same cluster -- maybe a more residential area? These are different blocks (and a different cluster) from houses that indivudally have 8 or more children
+
+
+## RN2
+Second consent form, includes participant name, sex, date of birth...we can see which blocks participated in the study
+### Number of participating clusters, blocks
+```{r}
+# id for unique block
+rn2 <- rn2 %>% 
+  mutate(clrblk_id = str_sub(record_id, 1,4),
+         cl_nr = str_sub(record_id, 1,2))
+
+# number of unique clusters
+length(unique(rn2$cl_nr))
+
+# number of unique block ids
+length(unique(rn2$clrblk_id))
+```
+53 clusters now, 1307 blocks participating
+
+### Reformat and get relevant information
+record_id is now the same format as in the case dataset
+```{r}
+# change format of record id so it'll match what we have in the cases later
+tirs_sex <- rn2 %>%
+  filter(if_all(rn2_pt_id, complete.cases)) %>%
+  select(record_id, rn2_pt_id, rn2_pt_sex) %>%
+  rename(old_id = record_id) %>%
+  mutate(record_id = paste0(old_id, LETTERS[rn2_pt_id]))
+```
+
+
+## SO1
+Prospective survey, will know number of adults and children (male and female) in each participating house
+### Number of participating clusters, blocks
+```{r}
+# id for unique block, info on household demographics
+hh_demo <- so1 %>% 
+  mutate(clrblk_id = str_sub(record_id, 1,4),
+         cl_nr = str_sub(record_id, 1,2)) %>%
+  select(cl_nr, clrblk_id, record_id, so1_male_nr, so1_male15_nr,
+         so1_female_nr, so1_female15_nr)
+
+# number of unique clusters
+length(unique(hh_demo$cl_nr))
+
+# number of unique block ids
+length(unique(hh_demo$clrblk_id))
+```
+Still 53 clusters, 1157 blocks included in this survey
+
+### Number of male and female adults, male and female children
+```{r}
+hh_demo <- hh_demo %>%
+  mutate(male_adults = so1_male_nr - so1_male15_nr,
+         female_adults = so1_female_nr - so1_female15_nr,
+         total_adults = male_adults + female_adults,
+         total_children = so1_male15_nr + so1_female15_nr,
+         total_num_ppl = total_adults + total_children) %>%
+  rename(total_males = so1_male_nr,
+         total_females = so1_female_nr,
+         male_children = so1_male15_nr,
+         female_children = so1_female15_nr) %>%
+  relocate(cl_nr, clrblk_id, record_id, total_num_ppl,
+           total_adults, total_children, male_adults, female_adults,
+           male_children, female_children, total_males, total_females)
+```
+
+
+## Sex_SINAVE
+Sex of MOH cases, Year
+### Recode variables to match with TIRS
+Anything look weird? + recode to match with TIRS sex
+```{r}
+# no missing values, only male and female 
+unique(moh$IDE_SEX)
+
+# recode sex to match with what was used in TIRS -- 1, Female and 2, Male
+# currently 1, Male and 2, Female
+moh$sex <- ifelse(moh$IDE_SEX == 2, 1, 2)
+```
+
+## TIRS_SINAVE_combined22_23_blockID
+Suspected case data from TIRS and MOH surveillance
+### Duplicates in the data?
+```{r}
+# check for duplicates in case data -- rows with same year and ID
+scases <- suspected_cases
+case_dupes <- suspected_cases %>%
+  count(ID, Year) %>%
+  filter(n > 1)
+suspected_cases %>%
+  semi_join(case_dupes, by = c("ID", "Year")) %>%
+  arrange(Year, ID)
+```
+- All 7 SINAVE cases except for one have the exact same information in both lines -- just a duplicate? (same date of symptom onset and diagnosis). The other one has a different date of symptom onset and different diagnosis (goes from non-severe dengue to dengue with warning signs) -- but shouldn't this also be treated as the same case?
+- As for the TIRS cases,
+302432A has same symptom onset date, same diagnosis, but different commentary, and importantly, different lat/long coordinates which leads to a different block ID!!
+401114A makes sense, particpant got Zika and then Dengue a few months later
+
+Just going to drop the exact duplicates for now:
+```{r}
+# check for exact duplicates
+suspected_cases[duplicated(suspected_cases),]
+# drop exact duplicates
+# scases <- suspected_cases[!duplicated(suspected_cases),]
+scases <- distinct(suspected_cases)
+```
+
+### Add deomographic data and organize dataset
+```{r}
+# join with MOH data
+moh <- distinct(moh)
+scases <- scases %>% 
+  left_join(moh, by = join_by(ID == FOL_ID)) %>%
+  select(!c(Year.y, IDE_SEX)) %>%
+  left_join(tirs_sex, by = join_by(ID == record_id)) %>%
+  mutate(Sex = ifelse(is.na(sex), rn2_pt_sex, sex)) %>%
+  select(!c(sex, old_id, rn2_pt_id, rn2_pt_sex))
+
+# reorganize dataset
+cases <- scases %>%
+  filter(Diagnosis != "Negativo") %>% # only case data?
+  rename(Year = Year.x, 
+         ClusterID = CLUSTER,
+         BlockID = MZTIRS,
+         Block_Type = MZA3X3) %>%
+  select(Year, Source, ID, Age, Sex, ClusterID, BlockID, Block_Type, TIRS, 
+         Onset_symp, Week_onset, Diagnosis, Comentario, lon, lat, CVEGEO, 
+         CVE_MZA)
+```
+
+# Preliminary Analyses
+## Regression Model
+
+
+# Model
+Take relevant data from each file
+```{r}
+# TIRS_SISNAVE case data
+## cases only
+case_data <- suspected_cases[suspected_cases$Diagnosis != "Negativo",]
+## drop variables i'm not interested in
+case_data <- case_data[, c(1:4, 6:7, 14:17)]
+
+# informed consent data
+## keep dob and sex (and record id and patient id)
+TIRS_dob_sex <- rn2[, c(1, 9, 10, 13)]
+
+# prospective survey data
+
+
+```
+
+
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
