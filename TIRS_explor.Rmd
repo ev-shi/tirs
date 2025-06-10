@@ -204,7 +204,6 @@ Suspected case data from TIRS and MOH surveillance
 ### Duplicates in the data?
 ```{r}
 # check for duplicates in case data -- rows with same year and ID
-scases <- suspected_cases
 case_dupes <- suspected_cases %>%
   count(ID, Year) %>%
   filter(n > 1)
@@ -213,17 +212,26 @@ suspected_cases %>%
   arrange(Year, ID)
 ```
 - All 7 SINAVE cases except for one have the exact same information in both lines -- just a duplicate? (same date of symptom onset and diagnosis). The other one has a different date of symptom onset and different diagnosis (goes from non-severe dengue to dengue with warning signs) -- but shouldn't this also be treated as the same case?
-- As for the TIRS cases,
-302432A has same symptom onset date, same diagnosis, but different commentary, and importantly, different lat/long coordinates which leads to a different block ID!!
-401114A makes sense, participant got Zika and then Dengue a few months later
 
-Just going to drop the exact duplicates for now:
+Let's just look at those cases
+```{r}
+suspected_cases %>%
+  filter(ID == "401114A" | ID == "302432A")
+```
+401114A makes sense, onset symptoms differ, as does diagnosis and week of onset...same block_id as well
+302432A could be a duplicate? the everything is the same except commentary and lat/long....maybe i'll keep the coordinate with the same block_id as what is in the ID?
+
+Just going to drop the exact duplicates for now.....and maybe delete the first 302432A......:
 ```{r}
 # check for exact duplicates
 suspected_cases[duplicated(suspected_cases),]
 # drop exact duplicates
 # scases <- suspected_cases[!duplicated(suspected_cases),]
 scases <- distinct(suspected_cases)
+
+# also drop the first 302432A...oh god why are they on rows so far apart
+which(scases$ID == "302432A")
+scases <- scases[-56, ]
 ```
 
 ### Add deomographic data and organize dataset
@@ -231,8 +239,8 @@ scases <- distinct(suspected_cases)
 # join with MOH data
 moh <- distinct(moh)
 scases <- scases %>% 
-  left_join(moh, by = join_by(ID == FOL_ID)) %>%
-  select(!c(Year.y, IDE_SEX)) %>%
+  left_join(moh, by = join_by(ID == FOL_ID, Year == Year)) %>%
+  select(!IDE_SEX) %>%
   left_join(tirs_sex, by = join_by(ID == record_id)) %>%
   mutate(Sex = ifelse(is.na(sex), rn2_pt_sex, sex)) %>%
   select(!c(sex, old_id, rn2_pt_id, rn2_pt_sex))
@@ -240,8 +248,7 @@ scases <- scases %>%
 # reorganize dataset
 cases <- scases %>%
   filter(Diagnosis != "Negativo") %>% # only case data?
-  rename(Year = Year.x, 
-         cluster_num = CLUSTER,
+  rename(cluster_num = CLUSTER,
          block_num = MZTIRS,
          Block_Type = MZA3X3) %>%
   mutate(block_id = paste0(cluster_num, block_num)) %>%
@@ -366,36 +373,6 @@ trial_cases %>%
 ```
 A few non-residential buildings, 
 So I'd want to look at (rn1_rsdnt == 1), (rn1_kids_nr != 0 [or NA]), 
-
-Also...ID 113319D -- seems like they moved? Since the year is different!
-```{r}
-trial_cases %>%
-  filter(record_id == 113319)
-```
-
-That said, are there any other instances where ID has been repeated?
-```{r}
-id_rep <- trial_cases %>%
-  group_by(id) %>%
-  summarize(count = n()) %>%
-  filter(count > 1)
-id_rep <- id_rep[-13, ] # excluding NAs
-```
-
-Looking further into these individuals?
-```{r}
-trial_cases %>%
-  filter(id %in% id_rep$id)
-```
-Ok most just got sick on different years, except 302432A and 401114A
-
-Let's just look at those cases
-```{r}
-cases %>%
-  filter(ID == "401114A" | ID == "302432A")
-```
-401114A makes sense, onset symptoms differ, as does diagnosis and week of onset...same block_id as well
-302432A could be a duplicate? the everything is the same except commentary and lat/long....maybe i'll keep the coordinate with the same block_id as what is in the ID?
 
 
 # Preliminary Analyses
