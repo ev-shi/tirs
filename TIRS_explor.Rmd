@@ -97,7 +97,7 @@ kids_per_block %>%
 kids_per_block %>% 
   filter(kids_per_block > 50)
 ```
-Some blocks have 76 children?? Blocks 3316, 3317, and 3319 all have over 50 kids...all from the same cluster -- maybe a more residential area? These are different blocks (and a different cluster) from houses that indivudally have 8 or more children
+Some blocks have 76 children?? Blocks 3316, 3317, and 3319 all have over 50 kids...all from the same cluster -- maybe a more residential area? These are different blocks (and a different cluster) from houses that individually have 8 or more children
 
 ## RN2
 Second consent form, includes participant name, sex, date of birth...we can see which blocks participated in the study
@@ -172,7 +172,6 @@ so1_clean %>%
 data entry - three cases (212420, 213035, 606312) where there are more male/female children than total reported males/females in the house
 
 25 houses with just teenagers/children?
-
 ```{r}
 # reorganize dataset
 so1_clean <- so1_clean %>%
@@ -267,6 +266,7 @@ cases <- scases %>%
 ```{r}
 
 ```
+
 
 # Main Dataset
 ## Dataset with everyone in each participating house 
@@ -374,6 +374,33 @@ trial_cases %>%
 A few non-residential buildings, 
 So I'd want to look at (rn1_rsdnt == 1), (rn1_kids_nr != 0 [or NA]), 
 
+
+
+## Augh ok what if I just started off on the block level? (when making the main dataset)
+Gonna start over from the beginning
+### Data Cleaning
+```{r}
+
+```
+### Merging datasets
+```{r}
+# coverage -- has block_id, coverage by year
+
+# entomology -- make block_id, has each visit type (averaged overall years -- do i want that info by year? yeah probably)
+
+# moh -- year, moh_id, sex
+
+# so1 -- make block_id, num adults, children males, females
+
+# cases -- year, by individual, age, time of onset -- wouldn't that have to be at an individual level?
+
+```
+
+
+
+### Flowchart ??
+See how we got from the number of observations in RN1 --> RN2 --> SO1
+- how many people didn't consent, didn't have children, non-residential houses, etc.
 
 # Preliminary Analyses
 ## Regression Model
