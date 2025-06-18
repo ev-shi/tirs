@@ -25,7 +25,7 @@ moh <- read.csv("data/Sex_SINAVE.csv")
 
 # import entomological and spraying coverage info
 coverage <- read.csv("data/TIRS coverage.csv")
-ento <- read.csv("data/TIRS_database_entom_summ.csv")
+ento <- read.csv("data/TIRS_database_entom_full.csv")
 
 # import arms-blocks assignment (full list of all participating houses?)
 arms <- read.csv("data/arms-blocks.csv")
@@ -264,9 +264,34 @@ cases <- scases %>%
 
 ## Entomology
 ```{r}
+ento_c <- ento %>%
+  ## create block_id, year
+  mutate(block_id = str_sub(record_id, 1,4),
+         year = ifelse(timepoint == "Y1", 2021, 
+                        ifelse(timepoint == "Y2", 2022, 2023))) %>%
+  rename(ento_cov = coverage,
+         trial_arm = arm,
+         visit_type = ent2_visit)
+
+
+# check to see if coverage = ento_cov
+# ento_clean %>%
+#   filter(coverage != ento_cov)
+
+ento_c %>%
+  filter(block_id == 3051)
 
 ```
+when trying to condense ento by block_id, year, and visit_type got a discrepancy in coverage for block_id 3051...
+Azael told me timecor is block_id and timepoint combined -- why the discrepancy? maybe i'll just stick with the timecor variable??? let's see what the coverage dataset (which he sent me) said
+```{r}
+coverage  %>%
+  filter(block_id == 3051)
 
+coverage %>%
+  filter(timecor == "Y23028" | timecor == "Y23031")
+```
+Ok yeah he just used the block_id from timecor so I guess I'll do that too
 
 # Main Dataset
 ## Dataset with everyone in each participating house 
@@ -380,11 +405,168 @@ So I'd want to look at (rn1_rsdnt == 1), (rn1_kids_nr != 0 [or NA]),
 Gonna start over from the beginning
 ### Data Cleaning
 ```{r}
+# drop exact duplicates
+scases <- distinct(suspected_cases)
+# also drop the first 302432A...seems to be the same case, just with different comments?
+which(scases$ID == "302432A")
+scases <- scases[-56, ]
 
+# only cases
+cases <- scases %>%
+  filter(Diagnosis != "Negativo")
+  
+# keep only so1 values for num adults, children make sense (only 3 that don't)
+sso1 <- so1 %>%
+  filter(so1_male_nr >= so1_male15_nr & so1_female_nr >= so1_female15_nr)
 ```
+
+### Reformatting Datasets
+Coverage (seems to be same as what's in ento, may not need)
+```{r}
+# TIRS coverage
+## change timepoint to year
+coverage$year <- ifelse(coverage$timepoint == "Y1", 2021, 
+                        ifelse(coverage$timepoint == "Y2", 2022, 2023))
+## keep relevant variables: block_id, year, coverage
+coverage_clean <- coverage %>%
+  select(block_id, year, coverage)
+```
+
+Entomology
+```{r}
+# entomology
+ento_clean <- ento %>%
+  ## create block_id, year
+  mutate(block_id = str_sub(timecor, 3,6),
+         year = ifelse(timepoint == "Y1", 2021, 
+                        ifelse(timepoint == "Y2", 2022, 2023))) %>%
+  rename(ento_cov = coverage,
+         trial_arm = arm,
+         visit_type = ent2_visit) %>%
+  ## keeping relevant variables block_id, year, ento_cov (see if it matches with
+  ##  coverage dataset?), ae_fem, ae_pos, block_type, trial_arm, visit_type
+  select(block_id, year, ento_cov, ae_fem, ae_pos, block_type, trial_arm,
+         visit_type) %>%
+  ## avg coverage, total ae_fem, ae_pos by block_id (former seems to all be the 
+  ##  same already?) 
+  group_by(block_id, year, visit_type) %>%
+  mutate(coverage = mean(ento_cov),
+         ae_fem = sum(ae_fem),
+         ae_pos = sum(ae_pos)) %>%
+  ## remove duplicates
+  distinct() %>%
+  arrange(block_id, year, visit_type) %>%
+  select(block_id, year, coverage, ae_fem, ae_pos, block_type, trial_arm,
+         visit_type)
+```
+
+MOH demographic data? I realize the cases don't have sex for either SINAVE cases or TIRS participants, i'd have to get that from rn2 -- maybe i'll hold off for now?
+```{r}  
+# MOH
+## recode variable to match with main dataset
+moh_clean <- moh %>%
+  mutate(sex = ifelse(IDE_SEX == 2, 1, 2))
+
+# merge with cases
+scases <- scases %>%
+  full_join(moh_clean, by = join_by("Year" == "Year",
+                                    "ID" == "FOL_ID"))
+```
+
+SO1 demographic data
+```{r}
+so1_clean <- sso1 %>% 
+  ## get block_id, number of male, female, total num adults and children
+  mutate(block_id = str_sub(record_id, 1,4),
+         male_adults = so1_male_nr - so1_male15_nr,
+         female_adults = so1_female_nr - so1_female15_nr,
+         total_adults = male_adults + female_adults,
+         total_children = so1_male15_nr + so1_female15_nr,
+         total_num_ppl = total_adults + total_children) %>%
+  rename(total_males = so1_male_nr,
+         total_females = so1_female_nr,
+         male_children = so1_male15_nr,
+         female_children = so1_female15_nr) %>%
+  ## keep relevant variables
+  select(block_id, total_num_ppl, total_adults, total_children, male_adults, 
+         female_adults, male_children, female_children, total_males, 
+         total_females) %>%
+  ## and summarize by block
+  group_by(block_id) %>%
+  mutate(total_num_ppl = sum(total_num_ppl),
+         total_adults = sum(total_adults),
+         total_children = sum(total_children),
+         male_adults = sum(male_adults), 
+         female_adults = sum(female_adults), 
+         male_children = sum(male_children),
+         female_children = sum(female_children),
+         total_males = sum(total_males),
+         total_females = sum(total_females)) %>%
+  ## remove duplicates
+  distinct()
+```
+
+Cases
+* ack how do i include person-time here i'm leaving it off for now fjdskjfsld
+* also some checks need to be done on block_id, age_group assumptions (see comments)
+```{r}
+cases_clean <- cases %>%
+  # create block_id from cluster and mztirs variables (from shape files?) i'm 
+  #   hoping they match record_id...may have to go back and check this...
+  # also make age_group
+  #   some cases don't have age recorded -- for those....do I just assume SINAVE 
+  #   cases are adults and TIRS cases are children?
+  mutate(block_id = paste0(CLUSTER, MZTIRS),
+         age_group = ifelse(is.na(Age) == FALSE, 
+                            ifelse(Age >= 18, "adult", "child"),
+                            ifelse(Source == "SINAVE", "adult", "child"))) %>%
+  rename(year = Year)
+
+# adults, children separate cases, then rbind
+## adults
+adult_cases <- cases_clean %>%
+  filter(age_group == "adult") %>%
+  group_by(block_id, year) %>%
+  mutate(adult_cases = n()) %>%
+  ungroup() %>%
+  select(block_id, year, adult_cases) %>%
+  arrange(block_id, year) %>%
+  distinct()
+  
+## child cases
+child_cases <- cases_clean %>%
+  filter(age_group == "child") %>%
+  group_by(block_id, year) %>%
+  mutate(child_cases = n()) %>%
+  ungroup() %>%
+  select(block_id, year, child_cases) %>%
+  arrange(block_id, year) %>%
+  distinct()
+
+## full case dataset
+full_cases <- adult_cases %>%
+  full_join(child_cases, by = c("block_id", "year")) %>%
+  mutate(adult_cases = ifelse(is.na(adult_cases) == TRUE, 0, adult_cases),
+         child_cases = ifelse(is.na(child_cases) == TRUE, 0, child_cases))
+  
+  
+  # mutate(num_cases = n()) %>%
+  # arrange(block_id, Year, age_group) %>%
+  # rename(year = Year) %>%
+  # mutate(adult_cases = ifelse(age_group == "adult", num_cases, NA),
+  #        child_cases = ifelse(age_group == "child", num_cases, NA)) %>%
+  # select(block_id, year, adult_cases, child_cases) %>%
+  # bind_rows()
+  
+
+cases_clean %>%
+  filter(block_id == 1524)
+```
+
 ### Merging datasets
 ```{r}
 # coverage -- has block_id, coverage by year
+## 
 
 # entomology -- make block_id, has each visit type (averaged overall years -- do i want that info by year? yeah probably)
 
@@ -392,7 +574,7 @@ Gonna start over from the beginning
 
 # so1 -- make block_id, num adults, children males, females
 
-# cases -- year, by individual, age, time of onset -- wouldn't that have to be at an individual level?
+# scases -- year, by individual, age, time of onset -- wouldn't that have to be at an individual level?
 
 ```
 
