@@ -32,9 +32,10 @@ arms <- read.csv("data/arms-blocks.csv")
 ```
 
 # Data Exploration
-## RN1
+## check out each dataset
+### RN1
 Cluster-level information, information on all households whether or not they joined the study
-### Number of blocks?
+#### Number of blocks?
 ```{r}
 # initial consent form RN1
 rn1 <- rn1 %>% 
@@ -48,7 +49,7 @@ length(unique(rn1$cl_nr))
 ```
 1529 blocks in the study, 54 unique cluster numbers...
 
-### Number of people in a block?
+#### Number of people in a block?
 ```{r}
 ## number of all residential houses in a given block
 num_res_houses <- rn1 %>% # id by block
@@ -58,7 +59,7 @@ num_res_houses <- rn1 %>% # id by block
 ```
 So we can find number of residential houses on a given block (see num_res_houses) but we only know the number of children within the household, nothing on adults.
 
-### Number of children by block
+#### Number of children by block
 ```{r}
 ## all data, only residential houses
 only_res <- subset(rn1, rn1_rsdnt == 1)
@@ -99,9 +100,9 @@ kids_per_block %>%
 ```
 Some blocks have 76 children?? Blocks 3316, 3317, and 3319 all have over 50 kids...all from the same cluster -- maybe a more residential area? These are different blocks (and a different cluster) from houses that individually have 8 or more children
 
-## RN2
+### RN2
 Second consent form, includes participant name, sex, date of birth...we can see which blocks participated in the study
-### Number of participating clusters, blocks
+#### Number of participating clusters, blocks
 ```{r}
 # id for unique block
 rn2 <- rn2 %>% 
@@ -116,7 +117,7 @@ length(unique(rn2$clrblk_id))
 ```
 53 clusters now, 1307 blocks participating
 
-### Reformat and get relevant information
+#### Reformat and get relevant information
 record_id is now the same format as in the case dataset
 ```{r}
 # change format of record id so it'll match what we have in the cases later
@@ -128,9 +129,9 @@ tirs_sex <- rn2 %>%
 ```
 
 
-## SO1
+### SO1
 Prospective survey, will know number of adults and children (male and female) in each participating house
-### Number of participating clusters, blocks
+#### Number of participating clusters, blocks
 ```{r}
 # id for unique block, info on household demographics
 hh_demo <- so1 %>% 
@@ -147,7 +148,7 @@ length(unique(hh_demo$clrblk_id))
 ```
 Still 53 clusters, 1157 blocks included in this survey
 
-### Number of male and female adults, male and female children
+#### Number of male and female adults, male and female children
 ```{r}
 hh_demo <- hh_demo %>%
   mutate(male_adults = so1_male_nr - so1_male15_nr,
@@ -185,9 +186,9 @@ so1_clean <- so1_clean %>%
 ```
 
 
-## MOH data
+### MOH data
 Sex of MOH cases, Year
-### Recode variables to match with TIRS
+#### Recode variables to match with TIRS
 Anything look weird? + recode to match with TIRS sex
 ```{r}
 # no missing values, only male and female 
@@ -198,9 +199,9 @@ unique(moh$IDE_SEX)
 moh$sex <- ifelse(moh$IDE_SEX == 2, 1, 2)
 ```
 
-## Case data
+### Case data
 Suspected case data from TIRS and MOH surveillance
-### Duplicates in the data?
+#### Duplicates in the data?
 ```{r}
 # check for duplicates in case data -- rows with same year and ID
 case_dupes <- suspected_cases %>%
@@ -233,7 +234,7 @@ which(scases$ID == "302432A")
 scases <- scases[-56, ]
 ```
 
-### Add deomographic data and organize dataset
+#### Add deomographic data and organize dataset
 ```{r}
 # join with MOH data
 moh <- distinct(moh)
@@ -257,12 +258,12 @@ cases <- scases %>%
   
 ```
 
-## Spraying Coverage
+### Spraying Coverage
 ```{r}
 # add TIRS coverage to all participating houses?
 ```
 
-## Entomology
+### Entomology
 ```{r}
 ento_c <- ento %>%
   ## create block_id, year
@@ -293,8 +294,116 @@ coverage %>%
 ```
 Ok yeah he just used the block_id from timecor so I guess I'll do that too
 
+## Non-participants / Missing Data
+What do I know and what can I find out about non-participating households in the study? How many people am I losing each time there's missing data?
+### Flowchart ??
+See how we got from the number of observations in RN1 --> RN2 --> SO1
+- how many people didn't consent, didn't have children, non-residential houses, etc.
+```{r}
+# RN1 has every household/building number (e.g., 111111, 111112, 111113...)
+length(unique(rn1$record_id))
+
+# how many households in RN2?
+length(unique(rn2$record_id))
+## what do we know about the ones not in rn2?
+rn1 %>% 
+  filter(! record_id %in% unique(rn2$record_id)) %>%
+  filter(rn1_rsdnt != 0) %>%
+  filter(rn1_kids_nr != 0)
+```
+From 40124 houses in RN1 to 4186 in RN2...35,938 houses who did not participate but still live in the block/cluster.
+- 7,427 of those aren't residential houses // leaving 28,511 who are residential houses but didn't answer RN2
+- of those 28,511, 27,619 did not have any children // leaving 892 homes who had kids but didn't answer RN2
+
+Any houses that are in SO1 but aren't in RN2?
+```{r}
+so1 %>%
+  filter(! record_id %in% unique(rn2$record_id))
+```
+There's one -- record id 123012
+
+Other way around?
+```{r}
+rn2 %>%
+  filter(! record_id %in% unique(so1$record_id))
+```
+1,485 who answered RN2 but did not continue onto SO1...maybe I'll just skip to SO1?
+
+How many houses did we lose?
+```{r}
+# RN1 has every household/building number (e.g., 111111, 111112, 111113...)
+length(unique(rn1$record_id))
+
+# how many households in SO1?
+length(unique(so1$record_id))
+## what do we know about the ones not in so1?
+rn1 %>% 
+  filter(! record_id %in% unique(so1$record_id)) %>%
+  filter(rn1_rsdnt != 0) %>%
+  filter(rn1_kids_nr != 0) %>%
+  filter(rn1_cnst_n1 == 1) %>%
+  filter(is.na(rn1_cnst_tirs))
+```
+From 40124 houses in RN1 to 2711 in SO1...37,413 houses who did not participate but are still located in the block/cluster.
+- 7,427 of those aren't residential houses // leaving 29,986 houses who are residential houses, live in the block/cluster, but did not participate in the study
+- of those 29,986, 27,619 did not have any children // leaving 2,352 homes who had kids but didn't answer SO1 (and I'm guessing didn't participate in the study?)
+- of those, 680 did not explicitly consent for N1 // leaving 1,672 who did, but didn't answer SO1/continue forward
+--> do we know anything about them? why did they not continue? is this important information to know?
+
+ok so arms only has participating households...or does it???
+```{r}
+## list participating households from arms // 2193 participating households 
+arms_partic <- arms %>%
+  distinct(record_id)
+## list of participating households from so1 // 2711 participating hhs
+so1_partic <- so1 %>%
+  distinct(record_id)
+## do they match? no ok interesting arms has fewer...did some answer SO1 and then...drop out??? why weren't they included in arms?
+so1 %>%
+  filter(! record_id %in% unique(arms$record_id)) %>%
+  distinct(record_id) ## // 529
+```
+well there are also 529 households that answered so1 but didn't seem to be assigned an arm???? at least in that dataset
+
+ok what are the block_id discrepancies then (in the three datasets i'm merging)
+```{r}
+so11 <- so1 %>%
+  mutate(block_id = str_sub(record_id, 1,4))
+entoo <- ento %>%
+  mutate(block_id = str_sub(record_id, 1,4))
+suss <- suspected_cases %>%
+  mutate(block_id1 = paste0(CLUSTER, MZTIRS),
+         block_id2 = ifelse(Source == "TIRS", str_sub(ID, 1,4), block_id1))
+
+s1_blocks <- so11 %>%
+  distinct(block_id) # 1,157 blocks
+en_blocks <- entoo %>%
+  distinct(block_id) # 1,150 blocks
+su_blocks1 <- suss %>%
+  distinct(block_id1) # 534 blocks
+su_blocks2 <- suss %>%
+  distinct(block_id2)
+
+# are all the blocks from the cases in so1?
+su_blocks1 %>%
+  filter(! block_id1 %in% s1_blocks$block_id) # oh great 89 blocks didn't seem to participate
+su_blocks2 %>%
+  filter(! block_id2 %in% s1_blocks$block_id) #.....66 this time
+# how about entomology?
+en_blocks %>%
+  filter(! block_id %in% s1_blocks$block_id) # 37 blocks have entomology information, but don't have so1 info
+
+suss %>%
+  filter(block_id1 != block_id2) # 124 cases (of just TIRS cases) have different block_ids than what their record_ids would indicate oh no
+
+```
+
+## Clustering?
+Just looking at data from the kids? Simple logistic regression
+
 # Main Dataset
-## Dataset with everyone in each participating house 
+## By Individual
+Ok yeah I don't think this is going to work -- too complicated/convoluted
 ### All houses that did SO1
 ```{r}
 # combine case data with all participating houses?
@@ -401,8 +510,8 @@ So I'd want to look at (rn1_rsdnt == 1), (rn1_kids_nr != 0 [or NA]),
 
 
 
-## Augh ok what if I just started off on the block level? (when making the main dataset)
-Gonna start over from the beginning
+## By Block
+(starting from the beginning)
 ### Data Cleaning
 ```{r}
 # drop exact duplicates
@@ -418,6 +527,18 @@ cases <- scases %>%
 # keep only so1 values for num adults, children make sense (only 3 that don't)
 sso1 <- so1 %>%
   filter(so1_male_nr >= so1_male15_nr & so1_female_nr >= so1_female15_nr)
+
+# is there missing data???
+sum(is.na(so1$so1_male_nr))
+sum(is.na(so1$so1_male15_nr))
+sum(is.na(so1$so1_female_nr))
+sum(is.na(so1$so1_female15_nr))
+## ok so every house answered these questions????
+so1 %>%
+  filter(is.na(so1_male_nr) == TRUE |
+           is.na(so1_male15_nr) == TRUE |
+           is.na(so1_female_nr) == TRUE |
+           is.na(so1_female15_nr) == TRUE) ## ok none of them fine
 ```
 
 ### Reformatting Datasets
@@ -548,44 +669,84 @@ full_cases <- adult_cases %>%
   full_join(child_cases, by = c("block_id", "year")) %>%
   mutate(adult_cases = ifelse(is.na(adult_cases) == TRUE, 0, adult_cases),
          child_cases = ifelse(is.na(child_cases) == TRUE, 0, child_cases))
-  
-  
-  # mutate(num_cases = n()) %>%
-  # arrange(block_id, Year, age_group) %>%
-  # rename(year = Year) %>%
-  # mutate(adult_cases = ifelse(age_group == "adult", num_cases, NA),
-  #        child_cases = ifelse(age_group == "child", num_cases, NA)) %>%
-  # select(block_id, year, adult_cases, child_cases) %>%
-  # bind_rows()
-  
-
-cases_clean %>%
-  filter(block_id == 1524)
 ```
 
 ### Merging datasets
+do we need data for number of adults? or maybe yes but since i don't have other gender data (on cases specifically) maybe not that????
 ```{r}
-# coverage -- has block_id, coverage by year
-## 
-
-# entomology -- make block_id, has each visit type (averaged overall years -- do i want that info by year? yeah probably)
-
-# moh -- year, moh_id, sex
-
-# so1 -- make block_id, num adults, children males, females
-
-# scases -- year, by individual, age, time of onset -- wouldn't that have to be at an individual level?
-
+block_data <- ento_clean %>%
+  # join entomology data (block id, year, visit type) with case data (block id,
+  # year)
+  full_join(full_cases, by = c("block_id", "year")) %>%
+  # no cases if those blocks weren't listed in full_cases
+  mutate(adult_cases = ifelse(is.na(adult_cases) == TRUE, 0, adult_cases),
+         child_cases = ifelse(is.na(child_cases) == TRUE, 0, child_cases),
+         total_cases = adult_cases + child_cases) %>%
+  # merge with so1 data -- demographic data for participating houses ? 
+  full_join(so1_clean, by = "block_id")
 ```
 
+Uh cchecking stuff
+```{r}
+# total number of people (participating in the study) in a block
+summary(block_data$total_num_ppl)
+## oh my god why are there some with missing data
+which(is.na(block_data$total_num_ppl))
+```
+Oh no are there cases in some houses that don't have any SO1 info?
+```{r}
+# what if i do a left join instead of a full join
+block_data_left <- ento_clean %>%
+  # join entomology data (block id, year, visit type) with case data (block id,
+  # year)
+  left_join(full_cases, by = c("block_id", "year")) %>%
+  # no cases if those blocks weren't listed in full_cases
+  mutate(adult_cases = ifelse(is.na(adult_cases) == TRUE, 0, adult_cases),
+         child_cases = ifelse(is.na(child_cases) == TRUE, 0, child_cases),
+         total_cases = adult_cases + child_cases) %>%
+  # merge with so1 data -- demographic data for participating houses ? 
+  left_join(so1_clean, by = "block_id")
 
+sum(is.na(block_data$total_num_ppl)) # 250 NAs
+nrow(block_data) - nrow(block_data_left) # left joining got rid of 165
+```
+ugh what do i know about the ones that have missing data? 
+which blocks?
+```{r}
+block_data %>%
+  filter(is.na(total_num_ppl) == TRUE) %>%
+  ungroup() %>%
+  distinct(pick(block_id)) # 114 blocks that don't have any so1 data?
+```
+what if i did an inner join...
+```{r}
+block_data_inner <- ento_clean %>%
+  # join entomology data (block id, year, visit type) with case data (block id,
+  # year)
+  inner_join(full_cases, by = c("block_id", "year")) %>%
+  # no cases if those blocks weren't listed in full_cases
+  mutate(adult_cases = ifelse(is.na(adult_cases) == TRUE, 0, adult_cases),
+         child_cases = ifelse(is.na(child_cases) == TRUE, 0, child_cases),
+         total_cases = adult_cases + child_cases) %>%
+  # merge with so1 data -- demographic data for participating houses ? 
+  inner_join(so1_clean, by = "block_id")
+```
+oh no that gets rid of so many observations
 
-### Flowchart ??
-See how we got from the number of observations in RN1 --> RN2 --> SO1
-- how many people didn't consent, didn't have children, non-residential houses, etc.
 
 # Preliminary Analyses
 ## Regression Model
+Poisson?
+- ok how am i incorporating person-time both here and also in the dataset augh
+- model assumptions
+-- poisson response sure
+-- are observations independent of one another? uhhhh
+-- mean = variance ??????? um
+-- linearity ? man i dunno
+```{r}
+
+```
+
 
 # Model
 
