@@ -38,11 +38,12 @@ Plot and see at what level cases are clustering -- household? block? cluster?
 Load libraries
 ```{r}
 pacman::p_load(sf, #replaces "maptools", "rgdal" and other deprecated packages 
-               tmap, #helps with plotting your map
-               RColorBrewer, # creates nice color schemes
-               classInt,  # finds class intervals for continuous variables
-               spgwr, # Adds the geographically weighted regression functions
-               here # For constructing filepaths relative to root directory
+               # tmap, #helps with plotting your map
+               # RColorBrewer, # creates nice color schemes
+               # classInt,  # finds class intervals for continuous variables
+               # spgwr, # Adds the geographically weighted regression functions
+               here, # For constructing filepaths relative to root directory
+               tidyverse
                )
 ```
 
@@ -67,29 +68,75 @@ plot(clusters['CLUSTER'],
 
 ## Plot by TIRS Arm
 ```{r}
-# There's probably an easier way to do this, but
-arm <- clusters$TIRS
+plot(clusters['TIRS'],
+     pal = c("tomato", "darkolivegreen2"),
+     lwd = 0.3)
+```
 
-## Define the variable (attribute) to shade tracts by
-pop2000 <- houston$POP2000
-
-# Define the number of classes
-nclr <- 5  # quintiles
-# Use RColorBrewer to choose the colors
-plotclr <- brewer.pal(nclr,"BuPu")
-
-class <- classInt::classIntervals(pop2000, nclr, style="quantile")
-colcode <- classInt::findColours(class, plotclr)
-
-#Fill in the tracts with the colors, 'main' and 'sub' define the titles.
-plot(houston['POP2000'],col=colcode,main="Population 2000",
-      sub="Quantile (Equal-Frequency) Class Intervals")
+# Cases Map (by Year)
+```{r}
+plot(cases["Year"],
+     pal = c("pink", "cadetblue3"))
 ```
 
 
-# Cases
+
+### Some Questions
+
+- Are there households included in this shape file? 
+
+- What are the blocks highlighted right now? Houses? Blocks?
+
+Houses (?)
+```{r}
+ggplot() +
+  #geom_sf(data = clusters, linewidth = 0.1, aes(fill = as.factor(TIRS))) +
+  geom_sf(data = clusters, aes(color = as.factor("MZCODE")))
+
+plot(clusters['MZCODE'])
+```
+
+Blocks
+
+
+- Right now it seems to just have cluster and block, but maybe I need to zoom in some more? 
+
+Finding limits for zooming in:
+```{r}
+print(clusters, n = 2)
+```
+
 
 ```{r}
-
+ggplot() +
+  #geom_sf(data = clusters, linewidth = 0.1, aes(fill = as.factor(TIRS))) +
+  geom_sf(data = clusters, aes(color = as.factor("MZCODE"))) +
+  geom_sf(data = cases, size = 1,
+          aes(color = as.factor(Year))) +
+  # scale_fill_manual(values = c("tomato", "darkolivegreen2"), 
+  #                   name = "TIRS", labels = c("No", "Yes")) + 
+  scale_color_manual(values = c("black", "lightblue", "navy"), 
+                    name = "Year", labels = c("2022", "2023", "houses")) +
+ # coord_sf(xlim = c(-42, 52), ylim = c(12, 84)) +
+  theme_minimal()
 ```
+
+# ggplot
+
+## Full Map
+```{r}
+ggplot() +
+  geom_sf(data = clusters, linewidth = 0.1, aes(fill = as.factor(TIRS))) +
+  geom_sf(data = cases, size = 1,
+          aes(color = as.factor(Year))) +
+  scale_fill_manual(values = c("tomato", "darkolivegreen2"), 
+                    name = "TIRS", labels = c("No", "Yes")) + 
+  scale_color_manual(values = c("lightblue", "navy"), 
+                    name = "Year", labels = c("2022", "2023")) +
+  theme_minimal()
+```
+
+
+
+
 
