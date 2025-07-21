@@ -1,0 +1,93 @@
+---
+title: "Spatial"
+author: "Evelyn Shi"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+(Code from Spatial Statistics SISMID Module with Drs. Lance Waller and Howard 
+Chang)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      message = FALSE)
+```
+
+# What We Have
+
+TIRS_SINAVE_22_23 shapefile includes (?)
+
+- .dbf file: contains attribute table
+
+- .shp file: contains track outlines
+
+- .shx file: connective tissue to link it all together
+
+- .prj file: for map projection
+
+- .cpg file: used to specify the code page to identify character encoding
+
+Also have the cluster shapefile! (From David, actual lifesaver)
+
+# What I'd Like to do
+Plot and see at what level cases are clustering -- household? block? cluster?
+
+# Data
+
+Load libraries
+```{r}
+pacman::p_load(sf, #replaces "maptools", "rgdal" and other deprecated packages 
+               tmap, #helps with plotting your map
+               RColorBrewer, # creates nice color schemes
+               classInt,  # finds class intervals for continuous variables
+               spgwr, # Adds the geographically weighted regression functions
+               here # For constructing filepaths relative to root directory
+               )
+```
+
+Read in shapefiles
+```{r}
+## Read in case shapefile - TIRS_SINAVE_22_23
+cases <- st_read(dsn = here("data"), 
+                 layer = "TIRS_SINAVE_22_23")
+## Cluster shapefile
+clusters <- st_read(dsn = here("data"),
+                    layer = "Cluster final 2021 actualizado")
+```
+
+# Cluster Map
+
+## Plot Only Clusters
+```{r}
+plot(clusters['CLUSTER'],
+     col = adjustcolor("grey", alpha=0.5),
+     lwd = 0.3)
+```
+
+## Plot by TIRS Arm
+```{r}
+# There's probably an easier way to do this, but
+## Define the variable (attribute) to shade tracts by
+pop2000 <- houston$POP2000
+
+# Define the number of classes
+nclr <- 5  # quintiles
+# Use RColorBrewer to choose the colors
+plotclr <- brewer.pal(nclr,"BuPu")
+
+class <- classInt::classIntervals(pop2000, nclr, style="quantile")
+colcode <- classInt::findColours(class, plotclr)
+
+#Fill in the tracts with the colors, 'main' and 'sub' define the titles.
+plot(houston['POP2000'],col=colcode,main="Population 2000",
+      sub="Quantile (Equal-Frequency) Class Intervals")
+```
+
+
+# Cases
+
+```{r}
+
+```
+
