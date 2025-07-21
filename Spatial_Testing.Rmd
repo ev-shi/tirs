@@ -5,6 +5,25 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
+```{css zoom-lib-src, echo = FALSE}
+script src = "https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"
+```
+
+```{js zoom-jquery, echo = FALSE}
+ $(document).ready(function() {
+    $('body').prepend('<div class=\"zoomDiv\"><img src=\"\" class=\"zoomImg\"></div>');
+    // onClick function for all plots (img's)
+    $('img:not(.zoomImg)').click(function() {
+      $('.zoomImg').attr('src', $(this).attr('src')).css({width: '100%'});
+      $('.zoomDiv').css({opacity: '1', width: 'auto', border: '1px solid white', borderRadius: '5px', position: 'fixed', top: '50%', left: '50%', marginRight: '-50%', transform: 'translate(-50%, -50%)', boxShadow: '0px 0px 50px #888888', zIndex: '50', overflow: 'auto', maxHeight: '100%'});
+    });
+    // onClick function for zoomImg
+    $('img.zoomImg').click(function() {
+      $('.zoomDiv').css({opacity: '0', width: '0%'}); 
+    });
+  })
+```
+
 (Code from Spatial Statistics SISMID Module with Drs. Lance Waller and Howard 
 Chang)
 
@@ -79,15 +98,15 @@ plot(cases["Year"],
      pal = c("pink", "cadetblue3"))
 ```
 
+# Some Questions
 
+## Households?
+Are there households included in this shape file? 
 
-### Some Questions
+### What is Each Polygon?
+What are the blocks highlighted right now? Houses? Blocks?
 
-- Are there households included in this shape file? 
-
-- What are the blocks highlighted right now? Houses? Blocks?
-
-Houses (?)
+#### Houses
 ```{r}
 ggplot() +
   #geom_sf(data = clusters, linewidth = 0.1, aes(fill = as.factor(TIRS))) +
@@ -96,30 +115,70 @@ ggplot() +
 plot(clusters['MZCODE'])
 ```
 
-Blocks
+#### Blocks
+```{r}
+plot(clusters[as.factor('IDMZA')])
+```
 
+#### Clusters
+```{r}
+plot(clusters['CLUSTER'])
+```
 
-- Right now it seems to just have cluster and block, but maybe I need to zoom in some more? 
+### Zoom In?
 
+Right now it seems to just have cluster and block, but maybe I need to zoom in some more? 
+
+#### Grid
 Finding limits for zooming in:
 ```{r}
 print(clusters, n = 2)
 ```
+X cut points:
+```{r}
+by_x <- (234607.3 - 219180.1) / 8
+x_coord <- seq(219180.1, 234607.3, by = by_x)
+```
 
+Y cut points:
+```{r}
+by_y <- (2324275 - 2314867) / 5
+y_coord <- seq(2314867, 2324275, by = by_y)
+```
+
+#### Plot 
 
 ```{r}
-ggplot() +
-  #geom_sf(data = clusters, linewidth = 0.1, aes(fill = as.factor(TIRS))) +
-  geom_sf(data = clusters, aes(color = as.factor("MZCODE"))) +
-  geom_sf(data = cases, size = 1,
-          aes(color = as.factor(Year))) +
-  # scale_fill_manual(values = c("tomato", "darkolivegreen2"), 
-  #                   name = "TIRS", labels = c("No", "Yes")) + 
-  scale_color_manual(values = c("black", "lightblue", "navy"), 
-                    name = "Year", labels = c("2022", "2023", "houses")) +
- # coord_sf(xlim = c(-42, 52), ylim = c(12, 84)) +
-  theme_minimal()
+for (i in 1:(length(x_coord)-1)){
+  for (j in 1:(length(y_coord)-1)){
+    plot <- ggplot() +
+      geom_sf(data = clusters, linewidth = 0.1, aes(fill = as.factor(TIRS))) +
+      geom_sf(data = cases, size = 1,
+              aes(color = as.factor(Year))) +
+      scale_fill_manual(values = c("tomato", "darkolivegreen2"),
+                        name = "TIRS", labels = c("No", "Yes")) +
+      scale_color_manual(values = c("black", "lightblue", "navy"), 
+                        name = "Year", labels = c("2022", "2023", "houses")) +
+      coord_sf(xlim = c(x_coord[i], x_coord[i+1]), 
+               ylim = c(y_coord[j], y_coord[j+1])) +
+      theme_minimal()
+    
+    print(plot)
+  }
+}
+
 ```
+? Ok maybe it's only at the block level?
+
+## Organized Questions
+
+### 1. Is MZCODE an individual house? 
+
+If so, are we able to use these shape files to look at houses individually?
+I'd like to know since it'd make it easier/more obvious to see if there's any
+clustering (visually) at the household level
+
+
 
 # ggplot
 
