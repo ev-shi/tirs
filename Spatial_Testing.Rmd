@@ -5,25 +5,6 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
-```{css zoom-lib-src, echo = FALSE}
-script src = "https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"
-```
-
-```{js zoom-jquery, echo = FALSE}
- $(document).ready(function() {
-    $('body').prepend('<div class=\"zoomDiv\"><img src=\"\" class=\"zoomImg\"></div>');
-    // onClick function for all plots (img's)
-    $('img:not(.zoomImg)').click(function() {
-      $('.zoomImg').attr('src', $(this).attr('src')).css({width: '100%'});
-      $('.zoomDiv').css({opacity: '1', width: 'auto', border: '1px solid white', borderRadius: '5px', position: 'fixed', top: '50%', left: '50%', marginRight: '-50%', transform: 'translate(-50%, -50%)', boxShadow: '0px 0px 50px #888888', zIndex: '50', overflow: 'auto', maxHeight: '100%'});
-    });
-    // onClick function for zoomImg
-    $('img.zoomImg').click(function() {
-      $('.zoomDiv').css({opacity: '0', width: '0%'}); 
-    });
-  })
-```
-
 (Code from Spatial Statistics SISMID Module with Drs. Lance Waller and Howard 
 Chang)
 
@@ -185,14 +166,16 @@ clustering (visually) at the household level
 ## Full Map
 ```{r}
 ggplot() +
-  geom_sf(data = clusters, linewidth = 0.1, aes(fill = as.factor(TIRS))) +
-  geom_sf(data = cases, size = 1,
+  geom_sf(data = clusters, linewidth = 0.05, aes(fill = as.factor(TIRS))) +
+  geom_sf(data = cases, size = 0.2, stroke = 0,
           aes(color = as.factor(Year))) +
   scale_fill_manual(values = c("tomato", "darkolivegreen2"), 
                     name = "TIRS", labels = c("No", "Yes")) + 
+  guides(color = guide_legend(override.aes = list(size = 3))) +
   scale_color_manual(values = c("lightblue", "navy"), 
                     name = "Year", labels = c("2022", "2023")) +
   theme_minimal()
+ggsave("case_clusters.pdf")
 ```
 
 
