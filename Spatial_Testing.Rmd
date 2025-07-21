@@ -68,6 +68,8 @@ plot(clusters['CLUSTER'],
 ## Plot by TIRS Arm
 ```{r}
 # There's probably an easier way to do this, but
+arm <- clusters$TIRS
+
 ## Define the variable (attribute) to shade tracts by
 pop2000 <- houston$POP2000
 
