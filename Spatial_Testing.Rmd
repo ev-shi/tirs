@@ -18,7 +18,12 @@ Waller and Howard Chang
 # Data
 Load libraries
 ```{r}
-pacman::p_load(sf, here, tidyverse, rio)
+pacman::p_load(sf, # spatial
+               here, 
+               tidyverse, 
+               rio, # for importing
+               GWmodel # geographically weighted regression functions
+               )
 ```
 
 Read in shapefiles
@@ -213,7 +218,50 @@ Outcome: symptomatic Aedes-borne disease cases
 Covariates: TIRS intervention, (mosquito density) ?????
 Potential confounders: sociodemographic data
 
+from module:
+Now we are ready to fit *geographically weighted regression* (GWR).  GWR uses weighting to fit local regression values to allow the slopes associated with each covariate to change (smoothly) over space.  (See Lecture notes for details).  To estimate the association $\beta(s)$ for a location $s$, GWR uses kernel weights (similar to our intensity estimation for point process data) to weight observations (outcomes and covariates) near $s$ more to give an estimate of $\beta$ associated with location $s$. If you move over, the weights change and the estimated association ($\beta$).   The kernels make sure that if you don't move far, the estimate doesn't change much so we get a smooth surface for $\beta$.
 
+We do this in two steps.  
+
+First, we estimate the bandwidth for the kernel using cross validation (CV).
+
+Next, we use the estimated bandwidth to fit the Poisson GWR model.
+
+wait...do cases and clusters need to be in the same shapefile gah
+```{r}
+# fitting poisson geographically weighted regression ??
+
+
+### Now to fit Poisson GWR!
+# The function 'ggwr' in the 'spgwr' package uses syntax similar to 'glm'
+# (like we would use in a standard Poisson regression).
+# 'longlat' tells the function that our coordinates are in longitude and
+# latitude coordinates.
+# 'ggwr.sel' selects the bandwidth for GWR based on the data, the model,
+# and cross-validation
+# Create distance matrix from centroids
+
+houston.sp <- houston %>%
+  as('Spatial')
+DM <- gw.dist(dp.locat = coordinates(houston.sp))
+head(houston)
+houston.bw <- bw.gwr(violence_2 ~ Zl_total + Zl_drug + offset(log(POP2000)),
+             data = houston.sp, 
+             adaptive=TRUE, 
+             dMat=DM)
+
+bgwr <- ggwr.basic(violence_2 ~ Zl_total + Zl_drug + offset(log(POP2000)), 
+                      data =houston.sp,
+                      family = "poisson",
+                      bw = houston.bw, 
+                      kernel = "bisquare", 
+                      adaptive = TRUE,
+                      dMat = DM)
+```
+
+ok great now i need to figure out how to merge shapefiles? 
+
+also should i be doing a regular poisson? not one that's geographically weighted
 
 
 
