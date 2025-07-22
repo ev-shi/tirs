@@ -18,7 +18,7 @@ Waller and Howard Chang
 # Data
 Load libraries
 ```{r}
-pacman::p_load(sf, here, tidyverse)
+pacman::p_load(sf, here, tidyverse, rio)
 ```
 
 Read in shapefiles
@@ -92,6 +92,9 @@ ggplot() +
 ggsave("case_clusters.pdf")
 ```
 
+# Regression
+
+
 # Questions
 
 ## 1. Is MZCODE an individual house? 
@@ -154,7 +157,62 @@ Yeah, doesn't seem like zooming in help...doens't seem like there's that much
 geographic information at the household level??? at least not where it's 
 showing up on the map
 
-## 2.
+### additional notes
+Asked Thomas for help and yes, we have cluster and block here, doesn't seem to 
+be info on households.
+
+## 2. Regression Questions
+
+# Scratch Work
+## regression stuff
+### regarding the data
+Regarding the dataset -- currently, the shapefiles have only information on 
+children (maybe only look at children first?)
+
+Looking at children first -- can i work with shapefiles using the tidyverse in 
+the same way as typical datasets/dataframes?
+```{r}
+tirs_cases <- cases %>%
+  filter(Source == "TIRS" & Diagnosis != "Negativo")
+```
+ok yes
+
+so now looking only at TIRS cases, only using data from the children...maybe 
+ignore data cleaning for now (but go back and see notes from R tools for rapid 
+outbreak analysis module) since i just want to see if i can figure out the model
+
+ok so if just children -- should add that data....? wait, can i? i can't combine 
+the data i have with cases and clusters since i have no location information on 
+them, just ID...
+
+Are there any shape files that include all the other data? I can't include any 
+other information right now, cases only...
+
+Well, IDMZA seems to be block_id (as used in the TIRS trial) so maybe I can 
+join that way...
+
+#### join data
+```{r}
+
+
+# ebola_confirmed <- here::here("data", "ebola_cases.csv") |>
+#   rio::import() |>
+#   dplyr::as_tibble()
+# ebola_confirmed
+
+```
+
+ugh actually i'll do this later holy cow i forgot how complicated merging the 
+data was
+
+### model
+
+Want to fit a geographically weighted regression to see the relationship between cases and intervention ? 
+
+Outcome: symptomatic Aedes-borne disease cases
+Covariates: TIRS intervention, (mosquito density) ?????
+Potential confounders: sociodemographic data
+
 
 
 
