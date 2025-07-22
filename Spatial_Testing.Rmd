@@ -15,7 +15,25 @@ knitr::opts_chunk$set(echo = TRUE,
 Some code and text inspired by Spatial Statistics SISMID Module with Drs. Lance
 Waller and Howard Chang
 
-# What We Have
+# Data
+Load libraries
+```{r}
+pacman::p_load(sf, here, tidyverse)
+```
+
+Read in shapefiles
+```{r}
+## Read in case shapefile - TIRS_SINAVE_22_23
+cases <- st_read(dsn = here("data"), 
+                 layer = "TIRS_SINAVE_22_23")
+## Cluster shapefile
+clusters <- st_read(dsn = here("data"),
+                    layer = "Cluster final 2021 actualizado")
+```
+
+# Mapping
+
+## What We Have
 
 Our shapefiles include
 
@@ -32,54 +50,61 @@ Our shapefiles include
 The two shapefiles are for the cluster polygons (From David, actual lifesaver)
 and the cases.
 
-# What I'd Like to do
+## What I'd Like to do
 Plot and see at what level cases are clustering -- household? block? cluster?
 
-# Data
-Load libraries
-```{r}
-pacman::p_load(sf, here, tidyverse)
-```
+## Data Exploration, Learning GIS
 
-Read in shapefiles
-```{r}
-## Read in case shapefile - TIRS_SINAVE_22_23
-cases <- st_read(dsn = here("data"), 
-                 layer = "TIRS_SINAVE_22_23")
-## Cluster shapefile
-clusters <- st_read(dsn = here("data"),
-                    layer = "Cluster final 2021 actualizado")
-```
-# Data Exploration, Learning GIS
-## Cluster Map
+### Cluster Map
 
-### Plot Only Clusters
+#### Plot Only Clusters
 ```{r}
 plot(clusters['CLUSTER'],
      col = adjustcolor("grey", alpha=0.5),
      lwd = 0.3)
 ```
 
-### Plot by TIRS Arm
+#### Plot by TIRS Arm
 ```{r}
 plot(clusters['TIRS'],
      pal = c("tomato", "darkolivegreen2"),
      lwd = 0.3)
 ```
 
-## Cases Map (by Year)
+### Cases Map (by Year)
 ```{r}
 plot(cases["Year"],
      pal = c("pink", "cadetblue3"))
 ```
 
-# Some Questions
+## ggplot Full Map
+```{r}
+ggplot() +
+  geom_sf(data = clusters, linewidth = 0.05, aes(fill = as.factor(TIRS))) +
+  geom_sf(data = cases, size = 0.2, stroke = 0,
+          aes(color = as.factor(Year))) +
+  scale_fill_manual(values = c("tomato", "darkolivegreen2"), 
+                    name = "TIRS", labels = c("No", "Yes")) + 
+  guides(color = guide_legend(override.aes = list(size = 3))) +
+  scale_color_manual(values = c("lightblue", "navy"), 
+                    name = "Year", labels = c("2022", "2023")) +
+  theme_minimal()
+ggsave("case_clusters.pdf")
+```
 
-## Households?
-Are there households included in this shape file? 
+# Questions
 
-### What is Each Polygon?
-What are the blocks highlighted right now? Houses? Blocks?
+## 1. Is MZCODE an individual house? 
+
+If so, are we able to use these shape files to look at houses individually?
+I'd like to know since it'd make it easier/more obvious to see if there's any
+clustering (visually) at the household level
+
+### further discussion
+
+Are there households included in this shape file? To answer this, what does it 
+seem like each polygon is? Houses? Blocks?
+
 ```{r, include = FALSE}
 # houses??
 plot(clusters['MZCODE'])
@@ -91,11 +116,8 @@ plot(clusters[as.factor('IDMZA')])
 plot(clusters['CLUSTER'])
 ```
 \
-Seems like it might just be block level polygons
-
-### Zoom In?
-Right now it seems to just have cluster and block, but maybe I need to zoom in some more? 
-
+Seems like it might just be block level polygons...but maybe I need to zoom in 
+some more? 
 ```{r, include=FALSE}
 # Finding limits for zooming in:
 print(clusters, n = 2)
@@ -128,35 +150,11 @@ for (i in 1:(length(x_coord)-1)){
 }
 ```
 \
-Yeah, doesn't seem like zooming in helps -- no info on household it seems?
+Yeah, doesn't seem like zooming in help...doens't seem like there's that much 
+geographic information at the household level??? at least not where it's 
+showing up on the map
 
-## Organized Questions
-
-### 1. Is MZCODE an individual house? 
-
-If so, are we able to use these shape files to look at houses individually?
-I'd like to know since it'd make it easier/more obvious to see if there's any
-clustering (visually) at the household level
-
-
-
-# ggplot
-
-## Full Map
-```{r}
-ggplot() +
-  geom_sf(data = clusters, linewidth = 0.05, aes(fill = as.factor(TIRS))) +
-  geom_sf(data = cases, size = 0.2, stroke = 0,
-          aes(color = as.factor(Year))) +
-  scale_fill_manual(values = c("tomato", "darkolivegreen2"), 
-                    name = "TIRS", labels = c("No", "Yes")) + 
-  guides(color = guide_legend(override.aes = list(size = 3))) +
-  scale_color_manual(values = c("lightblue", "navy"), 
-                    name = "Year", labels = c("2022", "2023")) +
-  theme_minimal()
-ggsave("case_clusters.pdf")
-```
-
+## 2.
 
 
 
