@@ -5,18 +5,19 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
-(Code from Spatial Statistics SISMID Module with Drs. Lance Waller and Howard 
-Chang)
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE,
                       warning = FALSE,
                       message = FALSE)
 ```
 
+
+Some code and text inspired by Spatial Statistics SISMID Module with Drs. Lance
+Waller and Howard Chang
+
 # What We Have
 
-TIRS_SINAVE_22_23 shapefile includes (?)
+Our shapefiles include
 
 - .dbf file: contains attribute table
 
@@ -28,23 +29,16 @@ TIRS_SINAVE_22_23 shapefile includes (?)
 
 - .cpg file: used to specify the code page to identify character encoding
 
-Also have the cluster shapefile! (From David, actual lifesaver)
+The two shapefiles are for the cluster polygons (From David, actual lifesaver)
+and the cases.
 
 # What I'd Like to do
 Plot and see at what level cases are clustering -- household? block? cluster?
 
 # Data
-
 Load libraries
 ```{r}
-pacman::p_load(sf, #replaces "maptools", "rgdal" and other deprecated packages 
-               # tmap, #helps with plotting your map
-               # RColorBrewer, # creates nice color schemes
-               # classInt,  # finds class intervals for continuous variables
-               # spgwr, # Adds the geographically weighted regression functions
-               here, # For constructing filepaths relative to root directory
-               tidyverse
-               )
+pacman::p_load(sf, here, tidyverse)
 ```
 
 Read in shapefiles
@@ -56,24 +50,24 @@ cases <- st_read(dsn = here("data"),
 clusters <- st_read(dsn = here("data"),
                     layer = "Cluster final 2021 actualizado")
 ```
+# Data Exploration, Learning GIS
+## Cluster Map
 
-# Cluster Map
-
-## Plot Only Clusters
+### Plot Only Clusters
 ```{r}
 plot(clusters['CLUSTER'],
      col = adjustcolor("grey", alpha=0.5),
      lwd = 0.3)
 ```
 
-## Plot by TIRS Arm
+### Plot by TIRS Arm
 ```{r}
 plot(clusters['TIRS'],
      pal = c("tomato", "darkolivegreen2"),
      lwd = 0.3)
 ```
 
-# Cases Map (by Year)
+## Cases Map (by Year)
 ```{r}
 plot(cases["Year"],
      pal = c("pink", "cadetblue3"))
@@ -86,50 +80,35 @@ Are there households included in this shape file?
 
 ### What is Each Polygon?
 What are the blocks highlighted right now? Houses? Blocks?
-
-#### Houses
-```{r}
-ggplot() +
-  #geom_sf(data = clusters, linewidth = 0.1, aes(fill = as.factor(TIRS))) +
-  geom_sf(data = clusters, aes(color = as.factor("MZCODE")))
-
+```{r, include = FALSE}
+# houses??
 plot(clusters['MZCODE'])
-```
 
-#### Blocks
-```{r}
+## blocks?
 plot(clusters[as.factor('IDMZA')])
-```
 
-#### Clusters
-```{r}
+## clusters
 plot(clusters['CLUSTER'])
 ```
+\
+Seems like it might just be block level polygons
 
 ### Zoom In?
-
 Right now it seems to just have cluster and block, but maybe I need to zoom in some more? 
 
-#### Grid
-Finding limits for zooming in:
-```{r}
+```{r, include=FALSE}
+# Finding limits for zooming in:
 print(clusters, n = 2)
-```
-X cut points:
-```{r}
+
+# X cut points:
 by_x <- (234607.3 - 219180.1) / 8
 x_coord <- seq(219180.1, 234607.3, by = by_x)
-```
 
-Y cut points:
-```{r}
+# Y cut points:
 by_y <- (2324275 - 2314867) / 5
 y_coord <- seq(2314867, 2324275, by = by_y)
-```
 
-#### Plot 
-
-```{r}
+# plotting
 for (i in 1:(length(x_coord)-1)){
   for (j in 1:(length(y_coord)-1)){
     plot <- ggplot() +
@@ -147,9 +126,9 @@ for (i in 1:(length(x_coord)-1)){
     print(plot)
   }
 }
-
 ```
-? Ok maybe it's only at the block level?
+\
+Yeah, doesn't seem like zooming in helps -- no info on household it seems?
 
 ## Organized Questions
 
