@@ -11,7 +11,6 @@ knitr::opts_chunk$set(echo = TRUE,
                       message = FALSE)
 ```
 
-
 Some code and text inspired by Spatial Statistics SISMID Module with Drs. Lance
 Waller and Howard Chang
 
@@ -98,7 +97,7 @@ ggsave("case_clusters.pdf")
 ```
 
 # Regression
-
+Can't do this until I have a clean, workable dataset
 
 # Questions
 

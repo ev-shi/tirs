@@ -1,0 +1,224 @@
+---
+title: "Data Cleaning"
+author: "Evelyn Shi"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      message = FALSE)
+```
+
+Some code and text inspired by Rapid Outbreak SISMID Module with Drs. Carl 
+Pearson and Cyril Geismar
+
+```{r}
+# Load packages
+library(tidyverse) # for {dplyr} functions
+library(rio) # for importing data
+library(here) # for easy file referencing
+```
+
+# Raw Data
+
+# Data Cleaning
+
+# Questions
+## 1. What is the full list of participating households?
+Is there a particular dataset that only contains participating households? 
+Since `arms` and `so1` and `cases` seem to have different households...and also
+there seem to be quite a few ABV cases that don't have corresponding SO1 
+information.
+
+### further discussion
+import data:
+```{r}
+## Read in case shapefile - TIRS_SINAVE_22_23
+cases <- st_read(dsn = here("data"), 
+                 layer = "TIRS_SINAVE_22_23")
+
+## enrollment data
+rn1 <- here::here("data", "RN1.csv") %>%
+  rio::import() %>% 
+  dplyr::as_tibble()
+rn2 <- here::here("data", "RN2.csv") %>%
+  rio::import() %>% 
+  dplyr::as_tibble()
+so1 <- here::here("data", "SO1.csv") %>%
+  rio::import() %>% 
+  dplyr::as_tibble()
+
+## trial arm assignment
+arms <- here::here("data", "arms-blocks.csv") %>%
+  rio::import() %>% 
+  dplyr::as_tibble()
+```
+
+# Scratch Work
+## loading data
+from TIRS_explor
+```{r}
+# import TIRS_SISNAVE data for all possible cases 
+suspected_cases <- 
+  read.csv("data/TIRS_SINAVE_combined22_23_blockID.csv")
+
+# import enrollment data: initial survey, informed consent and prospective survey
+rn1 <- read.csv("data/RN1.csv")
+rn2 <- read.csv("data/RN2.csv")
+so1 <- read.csv("data/SO1.csv")
+
+# import demographic data for SINAVE cases
+moh <- read.csv("data/Sex_SINAVE.csv")
+
+# import entomological and spraying coverage info
+coverage <- read.csv("data/TIRS coverage.csv")
+ento <- read.csv("data/TIRS_database_entom_full.csv")
+
+# import arms-blocks assignment (full list of all participating houses?)
+arms <- read.csv("data/arms-blocks.csv")
+```
+
+Q: would this be best done using the shapefiles??? just so i have all the
+information in one place?
+```{r}
+
+## Cluster shapefile
+clusters <- st_read(dsn = here("data"),
+                    layer = "Cluster final 2021 actualizado")
+```
+
+ultimately i want a dataset that has information at an individual level....
+would that be possible?? 
+
+## data structure
+Q: am i getting this correct? the layout/structure of these datasets/the way 
+they connect to each other
+
+RN1
+so this would have every single record_id, including buildings that may not be 
+residential or did not participate in the study
+
+RN2
+removed non-residential buildings, includes participant demographics
+
+SO1
+gives us number of men and women in each house
+
+## participants
+Q: which dataset has the full list of participating houses?
+going from RN1 --> RN2 --> SO1: who's included, who isn't?
+```{r}
+# RN1 has every household/building number (e.g., 111111, 111112, 111113...)
+length(unique(rn1$record_id))
+
+# how many households in RN2?
+length(unique(rn2$record_id))
+## what do we know about the ones not in rn2?
+rn1 %>% 
+  filter(! record_id %in% unique(rn2$record_id)) %>%
+  filter(rn1_rsdnt != 0) %>%
+  filter(rn1_kids_nr != 0)
+```
+From 40124 houses in RN1 to 4186 in RN2...35,938 houses who did not participate but still live in the block/cluster.
+- 7,427 of those aren't residential houses // leaving 28,511 who are residential houses but didn't answer RN2
+- of those 28,511, 27,619 did not have any children // leaving 892 homes who had kids but didn't answer RN2
+
+Any houses that are in SO1 but aren't in RN2?
+```{r}
+so1 %>%
+  filter(! record_id %in% unique(rn2$record_id))
+```
+There's one -- record id 123012
+
+Other way around?
+```{r}
+rn2 %>%
+  filter(! record_id %in% unique(so1$record_id))
+```
+1,485 who answered RN2 but did not continue onto SO1...maybe I'll just skip to SO1?
+
+How many houses did we lose?
+```{r}
+# RN1 has every household/building number (e.g., 111111, 111112, 111113...)
+length(unique(rn1$record_id))
+
+# how many households in SO1?
+length(unique(so1$record_id))
+## what do we know about the ones not in so1?
+rn1 %>% 
+  filter(! record_id %in% unique(so1$record_id)) %>%
+  filter(rn1_rsdnt != 0) %>%
+  filter(rn1_kids_nr != 0) %>%
+  filter(rn1_cnst_n1 == 1) %>%
+  filter(is.na(rn1_cnst_tirs))
+```
+From 40124 houses in RN1 to 2711 in SO1...37,413 houses who did not participate but are still located in the block/cluster.
+- 7,427 of those aren't residential houses // leaving 29,986 houses who are residential houses, live in the block/cluster, but did not participate in the study
+- of those 29,986, 27,619 did not have any children // leaving 2,352 homes who had kids but didn't answer SO1 (and I'm guessing didn't participate in the study?)
+- of those, 680 did not explicitly consent for N1 // leaving 1,672 who did, but didn't answer SO1/continue forward
+--> do we know anything about them? why did they not continue? is this important information to know?
+
+ok so arms only has participating households...or does it???
+```{r}
+## list participating households from arms // 2193 participating households 
+arms_partic <- arms %>%
+  distinct(record_id)
+## list of participating households from so1 // 2711 participating hhs
+so1_partic <- so1 %>%
+  distinct(record_id)
+## do they match? no ok interesting arms has fewer...did some answer SO1 and then...drop out??? why weren't they included in arms?
+so1 %>%
+  filter(! record_id %in% unique(arms$record_id)) %>%
+  distinct(record_id) ## // 529
+```
+well there are also 529 households that answered so1 but didn't seem to be assigned an arm???? at least in that dataset
+
+ok what are the block_id discrepancies then (in the three datasets i'm merging)
+```{r}
+so11 <- so1 %>%
+  mutate(block_id = str_sub(record_id, 1,4))
+entoo <- ento %>%
+  mutate(block_id = str_sub(record_id, 1,4))
+suss <- suspected_cases %>%
+  mutate(block_id1 = paste0(CLUSTER, MZTIRS),
+         block_id2 = ifelse(Source == "TIRS", str_sub(ID, 1,4), block_id1))
+
+s1_blocks <- so11 %>%
+  distinct(block_id) # 1,157 blocks
+en_blocks <- entoo %>%
+  distinct(block_id) # 1,150 blocks
+su_blocks1 <- suss %>%
+  distinct(block_id1) # 534 blocks
+su_blocks2 <- suss %>%
+  distinct(block_id2)
+
+# are all the blocks from the cases in so1?
+su_blocks1 %>%
+  filter(! block_id1 %in% s1_blocks$block_id) # oh great 89 blocks didn't seem to participate
+su_blocks2 %>%
+  filter(! block_id2 %in% s1_blocks$block_id) #.....66 this time
+# how about entomology?
+en_blocks %>%
+  filter(! block_id %in% s1_blocks$block_id) # 37 blocks have entomology information, but don't have so1 info
+
+suss %>%
+  filter(block_id1 != block_id2) # 124 cases (of just TIRS cases) have different block_ids than what their record_ids would indicate oh no
+
+```
+
+### full list of participants subquestion
+context: ok so when merging cases with households that had SO1 information, 
+there were quite a few IDs that didn't match
+
+## understanding the data
+Q: 25 houses with just teenages/children?
+
+Q: in case data -- possible duplicate?
+
+
+
+
+
+
