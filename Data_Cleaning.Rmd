@@ -21,33 +21,9 @@ library(sf) # for shapefiles
 ```
 
 # Raw Data
-
-# Data Cleaning
-
-# Questions
-## 1. What is the full list of participating households?
-That is, is there a particular dataset that only contains participating 
-households? 
-
-Because `arms` and `so1` and `cases` seem to have different households...and also
-there seem to be quite a few ABV cases that don't have corresponding SO1 
-information.
-
-- dynamic cohort
-
-(See workflow below)
-
-## 2. Is there a way to merge shapefiles by location?
 import data:
 ```{r}
-## Read in case shapefile - TIRS_SINAVE_22_23
-cases <- st_read(dsn = here("data"), 
-                 layer = "TIRS_SINAVE_22_23")
-## also clusters
-clusters <- st_read(dsn = here("data"),
-                    layer = "Cluster final 2021 actualizado")
-
-## enrollment data
+## enrollment data (everyone)
 rn1 <- here::here("data", "RN1.csv") %>%
   rio::import() %>% 
   dplyr::as_tibble()
@@ -58,167 +34,66 @@ so1 <- here::here("data", "SO1.csv") %>%
   rio::import() %>% 
   dplyr::as_tibble()
 
-## trial arm assignment
+## clinical data (everyone)
 arms <- here::here("data", "arms-blocks.csv") %>%
   rio::import() %>% 
   dplyr::as_tibble()
+suspected <- here::here("data", "VA5.csv") %>%
+  rio::import() %>% 
+  dplyr::as_tibble()
+actsurv <- here::here("data", "VAR6.csv") %>%
+  rio::import() %>% 
+  dplyr::as_tibble()
+
+## serology subset
+sero <- here::here("data", "ES3.csv") %>%
+  rio::import() %>% 
+  dplyr::as_tibble()
+ssurv <- here::here("data", "Serology Survey.csv") %>%
+  rio::import() %>% 
+  dplyr::as_tibble()
 ```
-I want to get `cases` and `clusters` to be on the same dataset? Or is there 
-already a dataset that includes cluster/case information for just the children
-in the study?
 
-## 3. Some difficulties in merging by record_id and geolocation?
-It seems like there are a lot of record_ids (in just TIRS cases) that don't have matching block_ids?
-
-See workflow below
-
-## Misc. smaller questions
-Q: in case data -- possible duplicate?
-Q: 25 houses with just teenages/children?
-
-# Workflow
-
-## data structure
-Q: am i getting this correct? the layout/structure of these datasets/the way 
-they connect to each other
-
-RN1
-so this would have every single record_id, including buildings that may not be 
-residential or did not participate in the study
-
-RN2
-removed non-residential buildings, includes participant demographics
-
-SO1
-gives us number of men and women in each house
-
-## participants
-Q: which dataset has the full list of participating houses?
-going from RN1 --> RN2 --> SO1: who's included, who isn't?
+merge data:
+1. Can merge by recordID and pt_id
+What do I need from enrollment data? (or is it better practice to keep 
+everything?)
+- rn1: nothing i think? (info on consent, number of kids, residential)
+       ...or do i use this as a way to get every single record id and then get 
+       rid of the ones that didn't consent/aren't residential? ok maybe that's 
+       a waste of time?
+- rn2: date of birth and consent date (to get age); participant sex; 
+       observations (at least one mentions the participant has moved)
+- so1: number of men/women total and under 15 in house; (also includes other
+       demographics, SES of household; knowledge of disease; prevention)
 ```{r}
-# RN1 has every household/building number (e.g., 111111, 111112, 111113...)
-length(unique(rn1$record_id))
-
-# how many households in RN2?
-length(unique(rn2$record_id))
-## what do we know about the ones not in rn2?
-rn1 %>% 
-  filter(! record_id %in% unique(rn2$record_id)) %>%
-  filter(rn1_rsdnt != 0) %>%
-  filter(rn1_kids_nr != 0)
-```
-From 40124 houses in RN1 to 4186 in RN2...35,938 houses who did not participate but still live in the block/cluster.
-- 7,427 of those aren't residential houses // leaving 28,511 who are residential houses but didn't answer RN2
-- of those 28,511, 27,619 did not have any children // leaving 892 homes who had kids but didn't answer RN2
-
-## note
-* GIS, ento, Azael
-* people-related Gloria (list)
-
-2022 census file has city blocks, has info on number of houses (would be good for control)
-
-Any houses that are in SO1 but aren't in RN2?
-```{r}
-cases %>% filter(Source == "SINAVE")
-cases %>% filter(Source == "TIRS")
-
-
-so1 %>%
-  filter(! record_id %in% unique(rn2$record_id))
-```
-There's one -- record id 123012
-
-Other way around?
-```{r}
-rn2 %>%
-  filter(! record_id %in% unique(so1$record_id))
-```
-1,485 who answered RN2 but did not continue onto SO1...maybe I'll just skip to SO1?
-
-How many houses did we lose?
-```{r}
-# RN1 has every household/building number (e.g., 111111, 111112, 111113...)
-length(unique(rn1$record_id))
-
-# how many households in SO1?
-length(unique(so1$record_id))
-## what do we know about the ones not in so1?
-rn1 %>% 
-  filter(! record_id %in% unique(so1$record_id)) %>%
-  filter(rn1_rsdnt != 0) %>%
-  filter(rn1_kids_nr != 0) %>%
-  filter(rn1_cnst_n1 == 1) %>%
-  filter(is.na(rn1_cnst_tirs))
-```
-From 40124 houses in RN1 to 2711 in SO1...37,413 houses who did not participate but are still located in the block/cluster.
-- 7,427 of those aren't residential houses // leaving 29,986 houses who are residential houses, live in the block/cluster, but did not participate in the study
-- of those 29,986, 27,619 did not have any children // leaving 2,352 homes who had kids but didn't answer SO1 (and I'm guessing didn't participate in the study?)
-- of those, 680 did not explicitly consent for N1 // leaving 1,672 who did, but didn't answer SO1/continue forward
---> do we know anything about them? why did they not continue? is this important information to know?
-
-ok so arms only has participating households...or does it???
-```{r}
-## list participating households from arms // 2193 participating households 
-arms_partic <- arms %>%
-  distinct(record_id)
-## list of participating households from so1 // 2711 participating hhs
-so1_partic <- so1 %>%
-  distinct(record_id)
-## do they match? no ok interesting arms has fewer...did some answer SO1 and then...drop out??? why weren't they included in arms?
-so1 %>%
-  filter(! record_id %in% unique(arms$record_id)) %>%
-  distinct(record_id) ## // 529
-```
-well there are also 529 households that answered so1 but didn't seem to be assigned an arm???? at least in that dataset
-
-ok what are the block_id discrepancies then (in the three datasets i'm merging)
-```{r}
-so11 <- so1 %>%
-  mutate(block_id = str_sub(record_id, 1,4))
-entoo <- ento %>%
-  mutate(block_id = str_sub(record_id, 1,4))
-suss <- suspected_cases %>%
-  mutate(block_id1 = paste0(CLUSTER, MZTIRS),
-         block_id2 = ifelse(Source == "TIRS", str_sub(ID, 1,4), block_id1))
-
-s1_blocks <- so11 %>%
-  distinct(block_id) # 1,157 blocks
-en_blocks <- entoo %>%
-  distinct(block_id) # 1,150 blocks
-su_blocks1 <- suss %>%
-  distinct(block_id1) # 534 blocks
-su_blocks2 <- suss %>%
-  distinct(block_id2)
-
-# are all the blocks from the cases in so1?
-su_blocks1 %>%
-  filter(! block_id1 %in% s1_blocks$block_id) # oh great 89 blocks didn't seem to participate
-su_blocks2 %>%
-  filter(! block_id2 %in% s1_blocks$block_id) #.....66 this time
-# how about entomology?
-en_blocks %>%
-  filter(! block_id %in% s1_blocks$block_id) # 37 blocks have entomology information, but don't have so1 info
-
-suss %>%
-  filter(block_id1 != block_id2) # 124 cases (of just TIRS cases) have different block_ids than what their record_ids would indicate oh no
-
+## enrollment data
+big <- rn1 %>% 
+  # removing REDCap stuff and address (empty)
+  select(-c(2:3, rn1_address, rn1_consent_n1_tirs_complete)) %>% 
+  # merge with rn2
+  full_join(rn2, by = "record_id") %>% 
+  # remove REDCap stuff
+  select(-c(redcap_event_name, redcap_repeat_instrument))
 ```
 
+# Data Cleaning
 
-## notes
-moved between blocks, imputed block id?, block id might be different, will have to pick one
+# Final Dataset
+- only children!
+- ok for survival-type data:
+-- one line for every participant
+-- at the very least we want entry exit indicator
 
-metapopulation patch model
+# Help
+- asked Gonzalo which dataset has the full list of all participants
+"dynamic cohort"
+ok
 
-we have !! number of people per block! within block -- tested, pos, 
-
-ICC is in natalie's paper ~0.04 (double check)
-
-** week after next (Gonzalo back, do we need group meeting?)
-
-** yeah -- block level
-
-
+- the only info i have from cases is the merged dataset but then those blocks 
+ids don't seem to exist in the original data i was sent so that's fun
+maybe i asked Gonzalo about this? i think he said i need to choose one so...ok 
+that feels ? wrong?
 
 
 
