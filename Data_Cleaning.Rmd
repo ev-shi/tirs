@@ -11,14 +11,13 @@ knitr::opts_chunk$set(echo = TRUE,
                       message = FALSE)
 ```
 
-Some code and text inspired by Rapid Outbreak SISMID Module with Drs. Carl 
-Pearson and Cyril Geismar
 
 ```{r}
 # Load packages
 library(tidyverse) # for {dplyr} functions
 library(rio) # for importing data
 library(here) # for easy file referencing
+library(sf) # for shapefiles
 ```
 
 # Raw Data
@@ -27,17 +26,26 @@ library(here) # for easy file referencing
 
 # Questions
 ## 1. What is the full list of participating households?
-Is there a particular dataset that only contains participating households? 
-Since `arms` and `so1` and `cases` seem to have different households...and also
+That is, is there a particular dataset that only contains participating 
+households? 
+
+Because `arms` and `so1` and `cases` seem to have different households...and also
 there seem to be quite a few ABV cases that don't have corresponding SO1 
 information.
 
-### further discussion
+- dynamic cohort
+
+(See workflow below)
+
+## 2. Is there a way to merge shapefiles by location?
 import data:
 ```{r}
 ## Read in case shapefile - TIRS_SINAVE_22_23
 cases <- st_read(dsn = here("data"), 
                  layer = "TIRS_SINAVE_22_23")
+## also clusters
+clusters <- st_read(dsn = here("data"),
+                    layer = "Cluster final 2021 actualizado")
 
 ## enrollment data
 rn1 <- here::here("data", "RN1.csv") %>%
@@ -55,42 +63,20 @@ arms <- here::here("data", "arms-blocks.csv") %>%
   rio::import() %>% 
   dplyr::as_tibble()
 ```
+I want to get `cases` and `clusters` to be on the same dataset? Or is there 
+already a dataset that includes cluster/case information for just the children
+in the study?
 
-# Scratch Work
-## loading data
-from TIRS_explor
-```{r}
-# import TIRS_SISNAVE data for all possible cases 
-suspected_cases <- 
-  read.csv("data/TIRS_SINAVE_combined22_23_blockID.csv")
+## 3. Some difficulties in merging by record_id and geolocation?
+It seems like there are a lot of record_ids (in just TIRS cases) that don't have matching block_ids?
 
-# import enrollment data: initial survey, informed consent and prospective survey
-rn1 <- read.csv("data/RN1.csv")
-rn2 <- read.csv("data/RN2.csv")
-so1 <- read.csv("data/SO1.csv")
+See workflow below
 
-# import demographic data for SINAVE cases
-moh <- read.csv("data/Sex_SINAVE.csv")
+## Misc. smaller questions
+Q: in case data -- possible duplicate?
+Q: 25 houses with just teenages/children?
 
-# import entomological and spraying coverage info
-coverage <- read.csv("data/TIRS coverage.csv")
-ento <- read.csv("data/TIRS_database_entom_full.csv")
-
-# import arms-blocks assignment (full list of all participating houses?)
-arms <- read.csv("data/arms-blocks.csv")
-```
-
-Q: would this be best done using the shapefiles??? just so i have all the
-information in one place?
-```{r}
-
-## Cluster shapefile
-clusters <- st_read(dsn = here("data"),
-                    layer = "Cluster final 2021 actualizado")
-```
-
-ultimately i want a dataset that has information at an individual level....
-would that be possible?? 
+# Workflow
 
 ## data structure
 Q: am i getting this correct? the layout/structure of these datasets/the way 
@@ -125,8 +111,18 @@ From 40124 houses in RN1 to 4186 in RN2...35,938 houses who did not participate 
 - 7,427 of those aren't residential houses // leaving 28,511 who are residential houses but didn't answer RN2
 - of those 28,511, 27,619 did not have any children // leaving 892 homes who had kids but didn't answer RN2
 
+## note
+* GIS, ento, Azael
+* people-related Gloria (list)
+
+2022 census file has city blocks, has info on number of houses (would be good for control)
+
 Any houses that are in SO1 but aren't in RN2?
 ```{r}
+cases %>% filter(Source == "SINAVE")
+cases %>% filter(Source == "TIRS")
+
+
 so1 %>%
   filter(! record_id %in% unique(rn2$record_id))
 ```
@@ -208,15 +204,19 @@ suss %>%
 
 ```
 
-### full list of participants subquestion
-context: ok so when merging cases with households that had SO1 information, 
-there were quite a few IDs that didn't match
 
-## understanding the data
-Q: 25 houses with just teenages/children?
+## notes
+moved between blocks, imputed block id?, block id might be different, will have to pick one
 
-Q: in case data -- possible duplicate?
+metapopulation patch model
 
+we have !! number of people per block! within block -- tested, pos, 
+
+ICC is in natalie's paper ~0.04 (double check)
+
+** week after next (Gonzalo back, do we need group meeting?)
+
+** yeah -- block level
 
 
 

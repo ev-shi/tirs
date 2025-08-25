@@ -25,7 +25,7 @@ moh <- read.csv("data/Sex_SINAVE.csv")
 
 # import entomological and spraying coverage info
 coverage <- read.csv("data/TIRS coverage.csv")
-ento <- read.csv("data/TIRS_database_entom_full.csv")
+ento <- read.csv("data/TIRS_database_entom.csv")
 
 # import arms-blocks assignment (full list of all participating houses?)
 arms <- read.csv("data/arms-blocks.csv")

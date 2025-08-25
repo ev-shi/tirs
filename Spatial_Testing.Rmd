@@ -97,7 +97,7 @@ ggsave("case_clusters.pdf")
 ```
 
 # Regression
-Can't do this until I have a clean, workable dataset
+Can't do this until I have a clean, workable dataset I think
 
 # Questions
 
