@@ -18,6 +18,7 @@ library(tidyverse) # for {dplyr} functions
 library(rio) # for importing data
 library(here) # for easy file referencing
 library(sf) # for shapefiles
+library(lubridate) # to work with dates
 ```
 
 # Raw Data
@@ -55,26 +56,64 @@ ssurv <- here::here("data", "Serology Survey.csv") %>%
 ```
 
 merge data:
-1. Can merge by recordID and pt_id
-What do I need from enrollment data? (or is it better practice to keep 
-everything?)
-- rn1: nothing i think? (info on consent, number of kids, residential)
-       ...or do i use this as a way to get every single record id and then get 
-       rid of the ones that didn't consent/aren't residential? ok maybe that's 
-       a waste of time?
-- rn2: date of birth and consent date (to get age); participant sex; 
-       observations (at least one mentions the participant has moved)
-- so1: number of men/women total and under 15 in house; (also includes other
-       demographics, SES of household; knowledge of disease; prevention)
 ```{r}
-## enrollment data
-big <- rn1 %>% 
-  # removing REDCap stuff and address (empty)
-  select(-c(2:3, rn1_address, rn1_consent_n1_tirs_complete)) %>% 
-  # merge with rn2
-  full_join(rn2, by = "record_id") %>% 
+## merge....prep?
+### give participants a unique ID
+rn2p <- rn2 %>% 
   # remove REDCap stuff
-  select(-c(redcap_event_name, redcap_repeat_instrument))
+  select(-c(redcap_event_name, redcap_repeat_instrument,
+            redcap_repeat_instance)) %>% 
+  filter(!is.na(rn2_pt_id)) %>% 
+  mutate(ID = paste0(record_id, LETTERS[rn2_pt_id])) %>% 
+  relocate(ID)
+armsp <- arms %>% 
+  select(-c(redcap_event_name, redcap_repeat_instrument,
+            redcap_repeat_instance)) %>% 
+  mutate(ID = paste0(record_id, LETTERS[a_pt_id])) %>% 
+  relocate(ID)
+
+### ok these also depend on year
+susp <- suspected %>% 
+  select(-c(redcap_event_name, redcap_repeat_instrument,
+            redcap_repeat_instance)) %>% 
+  mutate(ID = paste0(record_id, LETTERS[va5_pt_id])) %>% 
+  relocate(ID) %>% 
+  mutate(Year = year(mdy(va5_rep_date))) %>% 
+  relocate(Year, .after = record_id)
+actsp <- actsurv %>% 
+  select(-c(redcap_event_name, redcap_repeat_instrument,
+            redcap_repeat_instance, var6_no)) %>% 
+  mutate(ID = paste0(record_id, LETTERS[var6_pt_id])) %>% 
+  relocate(ID) %>% 
+  mutate(Year = year(mdy(var6_rpt_date))) %>% 
+  relocate(Year, .after = record_id)
+# might not need sero/es3? just says if blood sample successfully taken
+# serop <- sero %>% 
+#   select(-c(redcap_event_name, redcap_repeat_instrument,
+#             redcap_repeat_instance)) %>% 
+#   mutate(ID = paste0(record_id, LETTERS[es3_pt_id])) %>% 
+#   relocate(ID) %>% 
+#   mutate(Year = year(mdy(es3_date))) %>% 
+#   relocate(Year, .after = record_id)
+# these are the important ones -- the results ??
+ssurvp <- ssurv %>% 
+  select(-c(redcap_event_name, redcap_repeat_instrument,
+            redcap_repeat_instance)) %>% 
+  mutate(ID = paste0(record_id, LETTERS[ss_pt_id])) %>% 
+  relocate(ID) %>% 
+  mutate(Year = year(mdy(va5_rep_date))) %>% 
+  relocate(Year, .after = record_id)
+
+### by house, not by participant
+### so just get rid of redcap names
+so1p <- so1 %>% 
+  select(-c(redcap_event_name, redcap_repeat_instrument, 
+            redcap_repeat_instance))
+
+## big merge???
+full <- rn2p %>% 
+  full_join(armsp, by = c("ID", "record_id")) %>% 
+  full_join(susp, by = c("ID", "record_id"))
 ```
 
 # Data Cleaning
