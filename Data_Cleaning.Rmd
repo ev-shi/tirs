@@ -28,34 +28,31 @@ import data:
 rn1 <- here::here("data", "RN1.csv") %>%
   rio::import() %>% 
   dplyr::as_tibble()
-rn2 <- here::here("data", "RN2.csv") %>%
+rn2 <- here::here("data", "RN2.csv") %>% # assign participant ID
   rio::import() %>% 
   dplyr::as_tibble()
-so1 <- here::here("data", "SO1.csv") %>%
+so1 <- here::here("data", "SO1.csv") %>% # house demographics, etc
   rio::import() %>% 
   dplyr::as_tibble()
 
 ## clinical data (everyone)
-arms <- here::here("data", "arms-blocks.csv") %>%
+arms <- here::here("data", "arms-blocks.csv") %>% # trial arm
   rio::import() %>% 
   dplyr::as_tibble()
-suspected <- here::here("data", "VA5.csv") %>%
+suspected <- here::here("data", "VA5.csv") %>% # suspected cases
   rio::import() %>% 
   dplyr::as_tibble()
-actsurv <- here::here("data", "VAR6.csv") %>%
+actsurv <- here::here("data", "VAR6.csv") %>% # active surveillance reports
   rio::import() %>% 
   dplyr::as_tibble()
 
 ## serology subset
-sero <- here::here("data", "ES3.csv") %>%
-  rio::import() %>% 
-  dplyr::as_tibble()
-ssurv <- here::here("data", "Serology Survey.csv") %>%
+sero <- here::here("data", "Serology Survey.csv") %>% # serology test results
   rio::import() %>% 
   dplyr::as_tibble()
 ```
 
-merge data:
+merge prep:
 ```{r}
 ## merge....prep?
 ### give participants a unique ID
@@ -87,22 +84,6 @@ actsp <- actsurv %>%
   relocate(ID) %>% 
   mutate(Year = year(mdy(var6_rpt_date))) %>% 
   relocate(Year, .after = record_id)
-# might not need sero/es3? just says if blood sample successfully taken
-# serop <- sero %>% 
-#   select(-c(redcap_event_name, redcap_repeat_instrument,
-#             redcap_repeat_instance)) %>% 
-#   mutate(ID = paste0(record_id, LETTERS[es3_pt_id])) %>% 
-#   relocate(ID) %>% 
-#   mutate(Year = year(mdy(es3_date))) %>% 
-#   relocate(Year, .after = record_id)
-# these are the important ones -- the results ??
-ssurvp <- ssurv %>% 
-  select(-c(redcap_event_name, redcap_repeat_instrument,
-            redcap_repeat_instance)) %>% 
-  mutate(ID = paste0(record_id, LETTERS[ss_pt_id])) %>% 
-  relocate(ID) %>% 
-  mutate(Year = year(mdy(va5_rep_date))) %>% 
-  relocate(Year, .after = record_id)
 
 ### by house, not by participant
 ### so just get rid of redcap names
@@ -110,11 +91,23 @@ so1p <- so1 %>%
   select(-c(redcap_event_name, redcap_repeat_instrument, 
             redcap_repeat_instance))
 
-## big merge???
-full <- rn2p %>% 
-  full_join(armsp, by = c("ID", "record_id")) %>% 
+## subset of main population, also for different endpoint (infection) ?
+serop <- sero %>% ## ok want to figure out how to add this - to main dataset?
+  select(-c(redcap_event_name, redcap_repeat_instrument,
+            redcap_repeat_instance)) %>% 
+  mutate(ID = paste0(record_id, LETTERS[ss_pt_id])) %>% 
+  relocate(ID)
+```
+
+merge together:
+```{r}
+## big merge??? year + id + house --> id + house --> house
+full <- susp %>% 
+  full_join(actsp, by = c("ID", "record_id", "Year")) %>% 
   full_join(susp, by = c("ID", "record_id"))
 ```
+-- many to many relationship between suspected cases and active surveillance
+what's the relationship? overlap? between the two?
 
 # Data Cleaning
 
@@ -129,10 +122,6 @@ full <- rn2p %>%
 "dynamic cohort"
 ok
 
-- the only info i have from cases is the merged dataset but then those blocks 
-ids don't seem to exist in the original data i was sent so that's fun
-maybe i asked Gonzalo about this? i think he said i need to choose one so...ok 
-that feels ? wrong?
 
 
 
