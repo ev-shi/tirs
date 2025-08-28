@@ -60,7 +60,7 @@ rn2p <- rn2 %>%
   # remove REDCap stuff
   select(-c(redcap_event_name, redcap_repeat_instrument,
             redcap_repeat_instance)) %>% 
-  filter(!is.na(rn2_pt_id)) %>% 
+  filter(!is.na(rn2_pt_id) & rn2_cnst_n2 == 1) %>% 
   mutate(ID = paste0(record_id, LETTERS[rn2_pt_id])) %>% 
   relocate(ID)
 armsp <- arms %>% 
@@ -105,6 +105,33 @@ serop <- sero %>% ## ok want to figure out how to add this - to main dataset?
   relocate(ID)
 ```
 
+## Checking/Comparison with Main Paper
+4461 children
+- right now rn2p has all those who consented (rn2_cnst_n2 == 1) and have a 
+  participant id (!is.na(rn2_pt_id)) --> for 4998 children
+
+### By cluster:
+#### 25 TIRS clusters
+2393 children enrolled during initial enrollment period
+```{r}
+rn2p %>% 
+  full_join(armsp, by = c("ID", "record_id")) %>% 
+  filter(a_arm == 1) # 2016 children...
+
+# 4014 total in arms, could probably figure out what assignment the missing ones
+# had based on others in the same cluster...?
+```
+
+#### 25 control clusters
+2399 children enrolled during initial enrollment period
+```{r}
+rn2p %>% 
+  full_join(armsp, by = c("ID", "record_id")) %>% 
+  filter(a_arm == 0) # 1997 children :(
+```
+
+I don't know who came in and when -- I can't find when members exited
+
 merge together:
 ```{r}
 ## big merge???
@@ -131,14 +158,6 @@ full <- actsp %>% # year + id + house
 # Data Cleaning
 
 # Final Dataset
-
-# Checking/Comparison with Main Paper
-```{r}
-# 4461 children
-
-# 422 confirmed cases
-```
-
 
 # Help
 - asked Gonzalo which dataset has the full list of all participants
