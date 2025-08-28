@@ -70,7 +70,8 @@ armsp <- arms %>%
   relocate(ID)
 
 ### ok these also depend on year
-susp <- suspected %>% 
+susp <- suspected %>% # do i need this? active surv results (below) i think
+  # summarizes all the test results from suspected cases
   select(-c(redcap_event_name, redcap_repeat_instrument,
             redcap_repeat_instance)) %>% 
   mutate(ID = paste0(record_id, LETTERS[va5_pt_id])) %>% 
@@ -101,13 +102,20 @@ serop <- sero %>% ## ok want to figure out how to add this - to main dataset?
 
 merge together:
 ```{r}
-## big merge??? year + id + house --> id + house --> house
-full <- susp %>% 
-  full_join(actsp, by = c("ID", "record_id", "Year")) %>% 
-  full_join(susp, by = c("ID", "record_id"))
+## big merge???
+full <- actsp %>% # year + id + house
+  full_join(rn2p, by = c("ID", "record_id")) %>% # id + house
+  full_join(armsp, by = c("ID", "record_id")) %>% 
+  full_join(so1p, by = c("record_id")) %>% # house
+  arrange(ID) %>% 
+  relocate(var6_abv_pos___1, .after = Year)
+
+# entry: 
+# exit: 
+# indicator: var6_abv_pos - 1 yes, 0 no, NA censored?
+
 ```
--- many to many relationship between suspected cases and active surveillance
-what's the relationship? overlap? between the two?
+oh wait what if the same person has an event twice 
 
 # Data Cleaning
 
@@ -122,6 +130,18 @@ what's the relationship? overlap? between the two?
 "dynamic cohort"
 ok
 
+-- many to many relationship between suspected cases and active surveillance
+what's the relationship? overlap? between the two?
+- more suspected cases than in active surveillance results (just rest results?)
+- ok suspected cases ask all the additional questions, also has final diagnosis
+and clinical classification...but not abv cases y/n, denv/chikv/zikv with/w/o 
+warning signs only
+- is everything in active surv results in suspected cases? yes thank goodness
+```{r}
+actsp %>% 
+  filter(! ID %in% susp$ID)
+```
+- so is that all i need??...or should i keep info that's inside suspected cases?
 
 
 
