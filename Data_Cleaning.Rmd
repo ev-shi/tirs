@@ -25,9 +25,9 @@ library(lubridate) # to work with dates
 import data:
 ```{r}
 ## enrollment data (everyone)
-rn1 <- here::here("data", "RN1.csv") %>%
-  rio::import() %>% 
-  dplyr::as_tibble()
+# rn1 <- here::here("data", "RN1.csv") %>%
+#   rio::import() %>% 
+#   dplyr::as_tibble()
 rn2 <- here::here("data", "RN2.csv") %>% # assign participant ID
   rio::import() %>% 
   dplyr::as_tibble()
@@ -39,10 +39,10 @@ so1 <- here::here("data", "SO1.csv") %>% # house demographics, etc
 arms <- here::here("data", "arms-blocks.csv") %>% # trial arm
   rio::import() %>% 
   dplyr::as_tibble()
-suspected <- here::here("data", "VA5.csv") %>% # suspected cases
-  rio::import() %>% 
-  dplyr::as_tibble()
-actsurv <- here::here("data", "VAR6.csv") %>% # active surveillance reports
+# suspected <- here::here("data", "VA5.csv") %>% # suspected cases
+#   rio::import() %>% 
+#   dplyr::as_tibble()
+actsurv <- here::here("data", "VAR6.csv") %>% # active surveillance results
   rio::import() %>% 
   dplyr::as_tibble()
 
@@ -70,21 +70,26 @@ armsp <- arms %>%
   relocate(ID)
 
 ### ok these also depend on year
-susp <- suspected %>% # do i need this? active surv results (below) i think
-  # summarizes all the test results from suspected cases
-  select(-c(redcap_event_name, redcap_repeat_instrument,
-            redcap_repeat_instance)) %>% 
-  mutate(ID = paste0(record_id, LETTERS[va5_pt_id])) %>% 
-  relocate(ID) %>% 
-  mutate(Year = year(mdy(va5_rep_date))) %>% 
-  relocate(Year, .after = record_id)
+# susp <- suspected %>% # do i need this? active surv results (below) i think
+#   # summarizes all the test results from suspected cases
+#   select(-c(redcap_event_name, redcap_repeat_instrument,
+#             redcap_repeat_instance)) %>% 
+#   mutate(ID = paste0(record_id, LETTERS[va5_pt_id])) %>% 
+#   relocate(ID) %>% 
+#   mutate(Year = year(mdy(va5_rep_date))) %>% 
+#   relocate(Year, .after = record_id)
 actsp <- actsurv %>% 
   select(-c(redcap_event_name, redcap_repeat_instrument,
             redcap_repeat_instance, var6_no)) %>% 
   mutate(ID = paste0(record_id, LETTERS[var6_pt_id])) %>% 
   relocate(ID) %>% 
   mutate(Year = year(mdy(var6_rpt_date))) %>% 
-  relocate(Year, .after = record_id)
+  relocate(Year, .after = record_id) %>% 
+  # ok var6_abv_pos is total, should i also make a variable that's by season???
+  mutate(Pos_2021 = ifelse((Year == 2021 & var6_abv_pos___1 == 1), 1, 0),
+         Pos_2022 = ifelse((Year == 2022 & var6_abv_pos___1 == 1), 1, 0),
+         Pos_2023 = ifelse((Year == 2023 & var6_abv_pos___1 == 1), 1, 0)) %>% 
+  relocate(c(var6_abv_pos___1, Pos_2021, Pos_2022, Pos_2023), .after = Year)
 
 ### by house, not by participant
 ### so just get rid of redcap names
@@ -126,10 +131,14 @@ full <- actsp %>% # year + id + house
 # Data Cleaning
 
 # Final Dataset
-- only children!
-- ok for survival-type data:
--- one line for every participant
--- at the very least we want entry exit indicator
+
+# Checking/Comparison with Main Paper
+```{r}
+# 4461 children
+
+# 422 confirmed cases
+```
+
 
 # Help
 - asked Gonzalo which dataset has the full list of all participants
@@ -138,18 +147,12 @@ ok
 - wouldn't this affect person-time? if i don't know exactly when they entered
 or exited??
 
--- many to many relationship between suspected cases and active surveillance
-what's the relationship? overlap? between the two?
-- more suspected cases than in active surveillance results (just rest results?)
-- ok suspected cases ask all the additional questions, also has final diagnosis
-and clinical classification...but not abv cases y/n, denv/chikv/zikv with/w/o 
-warning signs only
-- is everything in active surv results in suspected cases? yes thank goodness
-```{r}
-actsp %>% 
-  filter(! ID %in% susp$ID)
-```
-- so is that all i need??...or should i keep info that's inside suspected cases?
+- merging entomology data? 
+
+- how to format serology data?
+
+- oh my god what about cases that might've been missed by trial active surv
+but were maybe picked up by national surv????
 
 
 
