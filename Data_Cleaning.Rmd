@@ -108,14 +108,20 @@ full <- actsp %>% # year + id + house
   full_join(armsp, by = c("ID", "record_id")) %>% 
   full_join(so1p, by = c("record_id")) %>% # house
   arrange(ID) %>% 
-  relocate(var6_abv_pos___1, .after = Year)
+  relocate(c(var6_abv_pos___1, a_block), .after = Year)
 
-# entry: 
-# exit: 
+# entry: beginning of peak ABD season (July 1 202X)?
+# exit: date of symptom onset (var6_symp_date), 
+#       or end of study period? (Dec 31 202X)
 # indicator: var6_abv_pos - 1 yes, 0 no, NA censored?
 
 ```
-oh wait what if the same person has an event twice 
+
+* considerations from original analysis
+- limited to season (person-time only included july-dec?)
+- within cluster center vs periphery (a_block; 1 central, 2 peripheral, 
+3 external)
+- 25 second cases/recurrent events
 
 # Data Cleaning
 
@@ -129,6 +135,8 @@ oh wait what if the same person has an event twice
 - asked Gonzalo which dataset has the full list of all participants
 "dynamic cohort"
 ok
+- wouldn't this affect person-time? if i don't know exactly when they entered
+or exited??
 
 -- many to many relationship between suspected cases and active surveillance
 what's the relationship? overlap? between the two?
