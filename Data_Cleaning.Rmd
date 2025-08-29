@@ -29,6 +29,9 @@ import data:
 # rn1 <- here::here("data", "RN1.csv") %>%
 #   rio::import() %>% 
 #   dplyr::as_tibble()
+cohort <- here::here("data", "cohort.csv") %>% # entry/exit times
+  rio::import() %>% 
+  dplyr::as_tibble()
 rn2 <- here::here("data", "RN2.csv") %>% # assign participant ID
   rio::import() %>% 
   dplyr::as_tibble()
@@ -57,40 +60,48 @@ merge prep:
 ```{r}
 ## merge....prep?
 ### give participants a unique ID
+cohortp <- cohort %>% 
+  select(-c(10:11)) %>% 
+  mutate(record_id = as.numeric(str_sub(PPID, 1, 6)),
+         Enrolm_Date = mdy(Enrolm_Date),
+         Exit_Date = ifelse(E3_Date == "#N/A", "1/1/25", E3_Date),
+         Exit_Date = mdy(Exit_Date)) %>% 
+  relocate(record_id, .after = PPID)
 rn2p <- rn2 %>% 
   # remove REDCap stuff
   select(-c(redcap_event_name, redcap_repeat_instrument,
             redcap_repeat_instance)) %>% 
   filter(!is.na(rn2_pt_id) & rn2_cnst_n2 == 1) %>% 
-  mutate(ID = paste0(record_id, LETTERS[rn2_pt_id])) %>% 
-  relocate(ID)
+  mutate(PPID = paste0(record_id, LETTERS[rn2_pt_id])) %>% 
+  relocate(PPID)
 armsp <- arms %>% 
   select(-c(redcap_event_name, redcap_repeat_instrument,
             redcap_repeat_instance)) %>% 
-  mutate(ID = paste0(record_id, LETTERS[a_pt_id])) %>% 
-  relocate(ID)
+  mutate(PPID = paste0(record_id, LETTERS[a_pt_id])) %>% 
+  relocate(PPID)
 
 ### ok these also depend on year
 # susp <- suspected %>% # do i need this? active surv results (below) i think
 #   # summarizes all the test results from suspected cases
 #   select(-c(redcap_event_name, redcap_repeat_instrument,
 #             redcap_repeat_instance)) %>% 
-#   mutate(ID = paste0(record_id, LETTERS[va5_pt_id])) %>% 
-#   relocate(ID) %>% 
+#   mutate(PPID = paste0(record_id, LETTERS[va5_pt_id])) %>% 
+#   relocate(PPID) %>% 
 #   mutate(Year = year(mdy(va5_rep_date))) %>% 
 #   relocate(Year, .after = record_id)
 actsp <- actsurv %>% 
   select(-c(redcap_event_name, redcap_repeat_instrument,
             redcap_repeat_instance, var6_no)) %>% 
-  mutate(ID = paste0(record_id, LETTERS[var6_pt_id])) %>% 
-  relocate(ID) %>% 
-  mutate(Year = year(mdy(var6_rpt_date))) %>% 
-  relocate(Year, .after = record_id) %>% 
+  mutate(PPID = paste0(record_id, LETTERS[var6_pt_id])) %>% 
+  relocate(PPID) %>% 
+  mutate(evnt_year = year(mdy(var6_rpt_date))) %>% 
+  relocate(evnt_year, .after = record_id) %>% 
   # ok var6_abv_pos is total, should i also make a variable that's by season???
-  mutate(Pos_2021 = ifelse((Year == 2021 & var6_abv_pos___1 == 1), 1, 0),
-         Pos_2022 = ifelse((Year == 2022 & var6_abv_pos___1 == 1), 1, 0),
-         Pos_2023 = ifelse((Year == 2023 & var6_abv_pos___1 == 1), 1, 0)) %>% 
-  relocate(c(var6_abv_pos___1, Pos_2021, Pos_2022, Pos_2023), .after = Year)
+  mutate(Pos_2021 = ifelse((evnt_year == 2021 & var6_abv_pos___1 == 1), 1, 0),
+         Pos_2022 = ifelse((evnt_year == 2022 & var6_abv_pos___1 == 1), 1, 0),
+         Pos_2023 = 
+           ifelse((evnt_year == 2023 & var6_abv_pos___1 == 1), 1, 0)) %>% 
+  relocate(c(var6_abv_pos___1, Pos_2021, Pos_2022, Pos_2023), .after = evnt_year)
 
 ### by house, not by participant
 ### so just get rid of redcap names
@@ -102,21 +113,25 @@ so1p <- so1 %>%
 serop <- sero %>% ## ok want to figure out how to add this - to main dataset?
   select(-c(redcap_event_name, redcap_repeat_instrument,
             redcap_repeat_instance)) %>% 
-  mutate(ID = paste0(record_id, LETTERS[ss_pt_id])) %>% 
-  relocate(ID)
+  mutate(PPID = paste0(record_id, LETTERS[ss_pt_id])) %>% 
+  relocate(PPID)
 ```
 
 merge together:
 ```{r}
 ## big merge???
-full <- actsp %>% # year + id + house
-  full_join(rn2p, by = c("ID", "record_id")) %>% # id + house
-  full_join(armsp, by = c("ID", "record_id")) %>% 
+full <- cohortp %>% 
+  full_join(actsp, by = c("PPID", "record_id")) %>% # event year + id + house
+  relocate(c(Enrolm_Date, Exit_Date, evnt_year), .after = record_id) %>% 
+  full_join(rn2p, by = c("PPID", "record_id")) %>% # id + house
+  full_join(armsp, by = c("PPID", "record_id")) %>% 
   full_join(so1p, by = c("record_id")) %>% # house
-  arrange(ID) %>% 
-  relocate(c(var6_abv_pos___1, a_block), .before = var6_pt_id)
+  rename(Pos_All = var6_abv_pos___1,
+         trial_arm = a_arm,
+         block_type = a_block) %>% 
+  relocate(c(Pos_All, trial_arm, block_type), .after = evnt_year)
 
-# entry: beginning of peak ABD season (July 1 202X)?
+# entry: beginning of peak ABD season (July 1 202X)? not enrollment date
 # exit: date of symptom onset (var6_symp_date), 
 #       or end of study period? (Dec 31 202X)
 # indicator: var6_abv_pos - 1 yes, 0 and NA censored?
@@ -128,27 +143,47 @@ full <- actsp %>% # year + id + house
   3 external)
 - 25 second cases/recurrent events
 
-* ok yeah i don't know the correct person time :) that's fun
-```{r}
-# rn2 consent dates? do they have the new entries here?
-rn2p %>% 
-  mutate(cnst_year = year(mdy(rn2_cnst_date))) %>% 
-  relocate(cnst_year, .after = record_id) %>% 
-  group_by(cnst_year) %>% 
-  summarize(n = n())
-# yeah no this just seems to be initial enrollment considering it's only 2020 
-# and 2021 dates
-```
-
-Fine, what if I just assume rn2 has a list of all participants for now and they
-all lasted until the end of the three year follow up period
+cleaning???? how to organize dataset?
 ```{r}
 # cleaning ? organizing merged dataset
 full_org <- full %>% 
-  mutate(Pos_All = ifelse(is.na(var6_abv_pos___1), 0, var6_abv_pos___1)) %>% 
-  relocate(Pos_All, .before = Pos_2021)
+  mutate(Pos_All = ifelse(is.na(Pos_All), 0, Pos_All)) %>% 
   # each individual has an ID, house id, and year/season?
+  { ifelse(is.na(full$evnt_year), 
+    crossing(., data.frame(event_year = c(2021, 2022, 2023))), . )} %>% 
+  relocate(event_year, .after = evnt_year) %>% 
+  filter(event_year <= year(Exit_Date))
+```
 
+```{r}
+
+full_org <- full %>%
+  mutate(Pos_All = ifelse(is.na(Pos_All), 0, Pos_All)) %>%
+  rowwise() %>%
+  mutate(event_year = list(
+    if (is.na(evnt_year)) c(2022, 2023, 2024) else evnt_year
+  )) %>%
+  unnest(event_year) %>%
+  ungroup() %>% 
+  relocate(event_year, .after = evnt_year)
+
+```
+
+```{r}
+
+
+full_org <- full %>%
+  mutate(Pos_All = ifelse(is.na(Pos_All), 0, Pos_All)) %>%
+  crossing(event_year = c(2022, 2023, 2024)) %>%
+  mutate(evnt_year = ifelse(is.na(evnt_year), NA_integer_,
+                            ifelse(evnt_year == 
+                                     event_year, evnt_year, NA_integer_))) %>% 
+  relocate(event_year, .after = evnt_year)
+
+```
+
+
+```{r}
 # subset data by season??
 yr_one <- full_org %>% 
   filter(is.na(Year) | Year == 2021) %>% 
@@ -242,11 +277,6 @@ plot(km_yr_three) # ok i think i messed up the time somewhere
 
 - how to format serology data?
 
-- asked Gonzalo which dataset has the full list of all participants
-"dynamic cohort"
-ok
-- wouldn't this affect person-time? if i don't know exactly when they entered
-or exited??
 ## Checking/Comparison with Main Paper
 4461 children
 - right now rn2p has all those who consented (rn2_cnst_n2 == 1) and have a 
@@ -272,6 +302,5 @@ rn2p %>%
   filter(a_arm == 0) # 1997 children :(
 ```
 
-I don't know who came in and when -- I can't find when members entered/exited
 
 
