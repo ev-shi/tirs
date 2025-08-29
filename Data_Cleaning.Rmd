@@ -95,13 +95,13 @@ actsp <- actsurv %>%
   mutate(PPID = paste0(record_id, LETTERS[var6_pt_id])) %>% 
   relocate(PPID) %>% 
   mutate(evnt_year = year(mdy(var6_rpt_date))) %>% 
-  relocate(evnt_year, .after = record_id) %>% 
-  # ok var6_abv_pos is total, should i also make a variable that's by season???
-  mutate(Pos_2021 = ifelse((evnt_year == 2021 & var6_abv_pos___1 == 1), 1, 0),
-         Pos_2022 = ifelse((evnt_year == 2022 & var6_abv_pos___1 == 1), 1, 0),
-         Pos_2023 = 
-           ifelse((evnt_year == 2023 & var6_abv_pos___1 == 1), 1, 0)) %>% 
-  relocate(c(var6_abv_pos___1, Pos_2021, Pos_2022, Pos_2023), .after = evnt_year)
+  relocate(evnt_year, .after = record_id) # %>% 
+  # # ok var6_abv_pos is total, should i also make a variable that's by season???
+  # mutate(Pos_2021 = ifelse((evnt_year == 2021 & var6_abv_pos___1 == 1), 1, 0),
+  #        Pos_2022 = ifelse((evnt_year == 2022 & var6_abv_pos___1 == 1), 1, 0),
+  #        Pos_2023 = 
+  #          ifelse((evnt_year == 2023 & var6_abv_pos___1 == 1), 1, 0)) %>% 
+  # relocate(c(var6_abv_pos___1, Pos_2021, Pos_2022, Pos_2023), .after = evnt_year)
 
 ### by house, not by participant
 ### so just get rid of redcap names
@@ -146,40 +146,15 @@ full <- cohortp %>%
 cleaning???? how to organize dataset?
 ```{r}
 # cleaning ? organizing merged dataset
-full_org <- full %>% 
-  mutate(Pos_All = ifelse(is.na(Pos_All), 0, Pos_All)) %>% 
+full_org <- full %>%
+  mutate(Pos_All = ifelse(is.na(Pos_All), 0, Pos_All)) %>%
   # each individual has an ID, house id, and year/season?
-  { ifelse(is.na(full$evnt_year), 
-    crossing(., data.frame(event_year = c(2021, 2022, 2023))), . )} %>% 
-  relocate(event_year, .after = evnt_year) %>% 
-  filter(event_year <= year(Exit_Date))
-```
-
-```{r}
-
-full_org <- full %>%
-  mutate(Pos_All = ifelse(is.na(Pos_All), 0, Pos_All)) %>%
-  rowwise() %>%
-  mutate(event_year = list(
-    if (is.na(evnt_year)) c(2022, 2023, 2024) else evnt_year
-  )) %>%
-  unnest(event_year) %>%
-  ungroup() %>% 
-  relocate(event_year, .after = evnt_year)
-
-```
-
-```{r}
-
-
-full_org <- full %>%
-  mutate(Pos_All = ifelse(is.na(Pos_All), 0, Pos_All)) %>%
   crossing(event_year = c(2022, 2023, 2024)) %>%
   mutate(evnt_year = ifelse(is.na(evnt_year), NA_integer_,
                             ifelse(evnt_year == 
-                                     event_year, evnt_year, NA_integer_))) %>% 
-  relocate(event_year, .after = evnt_year)
-
+                                     event_year, evnt_year, NA_integer_)),
+         Pos_All = ifelse(is.na(evnt_year), 0, Pos_All)) %>% 
+  relocate(event_year, .before = evnt_year)
 ```
 
 
