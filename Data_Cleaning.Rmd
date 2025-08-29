@@ -277,5 +277,15 @@ rn2p %>%
   filter(a_arm == 0) # 1997 children :(
 ```
 
+# clustering
+- way to look at clustering at hh level
+- extra risk if someone in hh, block, cluster has it
+-- ajusting for cluster, does hh member put me at extra risk
+--> can do this by fitting a mixed effects model - random effect for cluster, nested blocks, nested nested hh
 
+1) one line per person, survival
+- robust standard errors 
+- check that the numbers match up, and if i can reproduce table 1
+-- N, ABD cases, cum. incidence --> then work on TIRS efficacy
+- per protocol based on coverage 
 
