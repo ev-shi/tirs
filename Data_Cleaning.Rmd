@@ -43,9 +43,6 @@ so1 <- here::here("data", "SO1.csv") %>% # house demographics, etc
 arms <- here::here("data", "arms-blocks.csv") %>% # trial arm
   rio::import() %>% 
   dplyr::as_tibble()
-# suspected <- here::here("data", "VA5.csv") %>% # suspected cases
-#   rio::import() %>% 
-#   dplyr::as_tibble()
 actsurv <- here::here("data", "VAR6.csv") %>% # active surveillance results
   rio::import() %>% 
   dplyr::as_tibble()
@@ -64,7 +61,7 @@ cohortp <- cohort %>%
   select(-c(10:11)) %>% 
   mutate(record_id = as.numeric(str_sub(PPID, 1, 6)),
          Enrolm_Date = mdy(Enrolm_Date),
-         Exit_Date = ifelse(E3_Date == "#N/A", "2/2/2222", E3_Date),
+         Exit_Date = ifelse(E3_Date == "#N/A", "12/31/2023", E3_Date),
          Exit_Date = mdy(Exit_Date)) %>% 
   relocate(record_id, .after = PPID)
 rn2p <- rn2 %>% 
@@ -81,14 +78,6 @@ armsp <- arms %>%
   relocate(PPID)
 
 ### ok these also depend on year
-# susp <- suspected %>% # do i need this? active surv results (below) i think
-#   # summarizes all the test results from suspected cases
-#   select(-c(redcap_event_name, redcap_repeat_instrument,
-#             redcap_repeat_instance)) %>% 
-#   mutate(PPID = paste0(record_id, LETTERS[va5_pt_id])) %>% 
-#   relocate(PPID) %>% 
-#   mutate(Year = year(mdy(va5_rep_date))) %>% 
-#   relocate(Year, .after = record_id)
 actsp <- actsurv %>% 
   select(-c(redcap_event_name, redcap_repeat_instrument,
             redcap_repeat_instance, var6_no)) %>% 
@@ -137,6 +126,74 @@ full <- cohortp %>%
 # indicator: var6_abv_pos - 1 yes, 0 and NA censored?
 ```
 
+calculating person-time??
+```{r}
+person_time <- function(enroll, exit){
+  # season 1: July 1 2021 - December 31 2021
+  ## start date
+  if(enroll < mdy("07/01/2021")){
+    start21 <- mdy("07/01/2021")
+  } else {
+    start21 <- enroll
+  }
+  ## end date
+  if(exit < mdy("12/31/2021")) {
+    end21 <- exit
+  } else {
+    end21 <- mdy("12/31/2021")
+  }
+  ## season 1 total time
+  if(year(enroll) <= 2021 & exit > mdy("07/01/2021")){
+    s21 <- as.numeric(end21 - start21)
+  } else {
+    s21 <- 0
+  }
+  
+  # season 2: July 1 2022 - December 31 2022
+  ## start date
+  if(enroll < mdy("07/01/2022")){
+    start22 <- mdy("07/01/2022")
+  } else {
+    start22 <- enroll
+  }
+  ## end date
+  if(exit < mdy("12/31/2022")) {
+    end22 <- exit
+  } else {
+    end22 <- mdy("12/31/2022")
+  }
+  ## season 2 total time
+  if(year(enroll) <= 2022 & exit > enroll & exit > mdy("07/01/2022")){
+    s22 <- as.numeric(end22 - start22)
+  } else {
+    s22 <- 0
+  }
+  
+  # season 3: July 1 2023 - December 31 2023
+  ## start date
+  if(enroll < mdy("07/01/2023")){
+    start23 <- mdy("07/01/2023")
+  } else {
+    start23 <- enroll
+  }
+  ## end date
+  if(exit < mdy("12/31/2023")) {
+    end23 <- exit
+  } else {
+    end23 <- mdy("12/31/2023")
+  }
+  ## season 2 total time
+  if(year(enroll) <= 2023 & exit > enroll & exit > mdy("07/01/2023")){
+    s23 <- as.numeric(end23 - start23)
+  } else {
+    s23 <- 0
+  }
+  
+  total <- s21 + s22 + s23
+  return(total)
+}
+```
+
 formatting dataset/cleaning?:
 ```{r}
 # want one line per person, include all their person-time (only active period)
@@ -157,67 +214,9 @@ data <- full %>%
          Time2 = if_else(Pos_All == 1 & Symp_Date < Exit_Date, Symp_Date,
                         Exit_Date)) %>% 
   relocate(c(Symp_Date, Time2), .after = Exit_Date) #%>% 
-  # calculating person-time
+  # calculating person-time in days
 #  mutate(start21 = if_else(Enrolm_Date < mdy("07/01/2021"), Enrolm_Date,))
 
-
-person_time <- function(start, end){
-  # bro help
-  diff <- end - start
-  
-  
-  # season 1: July 1 2021 - December 31 2021
-  ## start date
-  s1 <- 0
-  s2 <- 0
-  s3 <- 0
-  if(start > mdy("07/01/2021")){
-    s1t1 <- start
-  } else {
-    s1t1 <- mdy("07/01/2021")
-  }
-  ## end date
-  if(end > mdy("12/31/2021")) {
-    s1t2 <- mdy("12/31/2021")
-  } else {
-    s1t2 <- end
-  }
-  
-  # season 2: July 1 2022 - December 31 2022
-  ## start date
-  if(start > mdy("07/01/2022")){
-    s2t1 <- start
-  } else if () {
-    s2t1 <- mdy("07/01/2022")
-  } else {
-    
-  }
-  ## end date
-  if(end > mdy("12/31/2022")) {
-    s2t2 <- mdy("12/31/2022")
-  } else {
-    s2t2 <- end
-  }
-  
-  # season 3: July 1 2023 - December 31 2023
-  ## start date
-  if(start > mdy("07/01/2023")){
-    s3t1 <- start
-  } else {
-    s3t1 <- mdy("07/01/2023")
-  }
-  ## end date
-  if(end > mdy("12/31/2023")) {
-    s3t2 <- mdy("12/31/2023")
-  } else {
-    s3t2 <- end
-  }
-  
-  ## time difference
-  s1 <- as.numeric(s1t2 - s1t1)
-  s2 <- as.numeric(s2t2 - s2t1)
-  s3 <- as.numeric(s3t2 - s3t1)
-}
 ```
 
 
