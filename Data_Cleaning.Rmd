@@ -198,6 +198,7 @@ formatting dataset/cleaning?:
 ```{r}
 # want one line per person, include all their person-time (only active period)
 data <- full %>% 
+  # only take first event/one line per id
   group_by(PPID) %>% 
   filter(row_number() == {
     event <- which(Pos_All==1)
@@ -213,10 +214,15 @@ data <- full %>%
          Symp_Date = mdy(var6_symp_date),
          Time2 = if_else(Pos_All == 1 & Symp_Date < Exit_Date, Symp_Date,
                         Exit_Date)) %>% 
-  relocate(c(Symp_Date, Time2), .after = Exit_Date) #%>% 
+  relocate(c(Symp_Date, Time2), .after = Exit_Date) %>%
+  # 22 had missing enrollment/exit dates...drop?
+  filter(!is.na(Enrolm_Date)) %>% 
   # calculating person-time in days
-#  mutate(start21 = if_else(Enrolm_Date < mdy("07/01/2021"), Enrolm_Date,))
-
+  mutate(time1 = 0,
+         time2 = mapply(person_time, data$Enrolm_Date, data$Time2)) %>% 
+  relocate(c(time1, time2), .after = record_id) %>% 
+  # only including those who contributed person time
+  filter(time2 != 0) # omg 4461 children same as in paper yay
 ```
 
 
