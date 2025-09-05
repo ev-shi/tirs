@@ -128,68 +128,23 @@ full <- cohortp %>%
 
 calculating person-time??
 ```{r}
-person_time <- function(enroll, exit){
-  # season 1: July 1 2021 - December 31 2021
-  ## start date
-  if(enroll < mdy("07/01/2021")){
-    start21 <- mdy("07/01/2021")
-  } else {
-    start21 <- enroll
-  }
-  ## end date
-  if(exit < mdy("12/31/2021")) {
-    end21 <- exit
-  } else {
-    end21 <- mdy("12/31/2021")
-  }
-  ## season 1 total time
-  if(year(enroll) <= 2021 & exit > mdy("07/01/2021")){
-    s21 <- as.numeric(end21 - start21)
-  } else {
-    s21 <- 0
+person_time <- function(time1, time2) {
+  # start and end dates for active ABD seasons
+  season_start <- mdy(c("07/01/2021", "07/01/2022", "07/01/2023"))
+  season_end <- mdy(c("12/31/2021", "12/31/2022", "12/31/2023"))
+  
+  total <- rep(0, length(time1))
+  
+  for (i in seq_along(season_start)){
+    # each person's entry and exit per season
+    entry <- pmax(time1, season_start[i])
+    exit <- pmin(time2, season_end[i])
+    
+    time_in_season <- ifelse(time2 > season_start[i] & time1<= season_end[i],
+                             as.numeric(exit - entry), 0)
+    total <- total + time_in_season
   }
   
-  # season 2: July 1 2022 - December 31 2022
-  ## start date
-  if(enroll < mdy("07/01/2022")){
-    start22 <- mdy("07/01/2022")
-  } else {
-    start22 <- enroll
-  }
-  ## end date
-  if(exit < mdy("12/31/2022")) {
-    end22 <- exit
-  } else {
-    end22 <- mdy("12/31/2022")
-  }
-  ## season 2 total time
-  if(year(enroll) <= 2022 & exit > enroll & exit > mdy("07/01/2022")){
-    s22 <- as.numeric(end22 - start22)
-  } else {
-    s22 <- 0
-  }
-  
-  # season 3: July 1 2023 - December 31 2023
-  ## start date
-  if(enroll < mdy("07/01/2023")){
-    start23 <- mdy("07/01/2023")
-  } else {
-    start23 <- enroll
-  }
-  ## end date
-  if(exit < mdy("12/31/2023")) {
-    end23 <- exit
-  } else {
-    end23 <- mdy("12/31/2023")
-  }
-  ## season 2 total time
-  if(year(enroll) <= 2023 & exit > enroll & exit > mdy("07/01/2023")){
-    s23 <- as.numeric(end23 - start23)
-  } else {
-    s23 <- 0
-  }
-  
-  total <- s21 + s22 + s23
   return(total)
 }
 ```
@@ -218,11 +173,12 @@ data <- full %>%
   # 22 had missing enrollment/exit dates...drop?
   filter(!is.na(Enrolm_Date)) %>% 
   # calculating person-time in days
-  mutate(time1 = 0,
-         time2 = mapply(person_time, data$Enrolm_Date, data$Time2)) %>% 
-  relocate(c(time1, time2), .after = record_id) %>% 
+  rowwise() %>% 
+  mutate(entry = 0,
+         exit = person_time(Enrolm_Date, Time2)) %>% 
+  relocate(c(entry, exit), .after = record_id) %>% 
   # only including those who contributed person time
-  filter(time2 != 0) # omg 4461 children same as in paper yay
+  filter(exit != 0) # omg 4461 children same as in paper yay
 ```
 
 
