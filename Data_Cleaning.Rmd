@@ -104,23 +104,23 @@ serop <- sero %>% ## ok want to figure out how to add this - to main dataset?
 
 ## by house and visit
 ### check to see if they were still enrolled?
-entop <- ento %>% 
-  full_join(cohortp, by = "record_id", relationship = "many-to-many")
-  # drop houses that didn't have participants
-entop <- entop %>% 
-  filter(!is.na(PPID)) %>% 
-  relocate(c(PPID, record_id, Enrolm_Date, Exit_Date, ent2_date, arm, coverage),
-          .before = timepoint) %>% 
-  filter(mdy(ent2_date) >= Enrolm_Date & mdy(ent2_date) <= Exit_Date) %>% 
-  group_by(PPID, record_id, timepoint, ent2_visit) %>% 
-  # tirs arm nonzero coverage for each visit, control 0 coverage for each visit
-  summarize(all_visits = ifelse(arm == 1, all(coverage != 0), 
-                                 all(coverage == 0)),
+entof <- ento %>% 
+  group_by(record_id, timepoint) %>% 
+  # tirs arm nonzero coverage for each visit
+  summarize(all_visits = all(coverage != 0),
             .groups = "drop") %>% 
   group_by(record_id) %>% 
   # true for all years in study?
   summarize(per_protocol = as.integer(all(all_visits)),
-            .groups = "drop")
+            .groups = "drop") 
+entop <- ento %>% 
+  left_join(entof, by = "record_id") %>% 
+  mutate(per_protocol = ifelse(block_type == 1, per_protocol, 0),
+         per_protocol = ifelse(arm == 0, 1, per_protocol)) %>% 
+  # just take first per house?
+  group_by(record_id) %>% 
+  slice(1) %>% 
+  select(-block_type)
 ```
 
 merge together:
@@ -131,7 +131,8 @@ full <- cohortp %>%
   relocate(c(Enrolm_Date, Exit_Date, evnt_year), .after = record_id) %>% 
   full_join(rn2p, by = c("PPID", "record_id")) %>% # id + house
   full_join(armsp, by = c("PPID", "record_id")) %>% 
-  full_join(so1p, by = c("record_id")) %>% # house
+  full_join(so1p, by = "record_id") %>% # house
+  full_join(entop, by = "record_id") %>% # house
   rename(Pos_All = var6_abv_pos___1,
          trial_arm = a_arm,
          block_type = a_block) %>% 
@@ -197,6 +198,10 @@ data <- full %>%
 
 # Following Main Analysis
 ```{r}
+# checking per protocol...3258 which is way more than 1038 :'(
+pproto <- data %>% 
+  filter(per_protocol == 1)
+
 # replicating table 1
 ```
 
