@@ -20,6 +20,7 @@ library(here) # for easy file referencing
 library(sf) # for shapefiles
 library(lubridate) # to work with dates
 library(survival)
+library(survminer)
 ```
 
 # Raw Data
@@ -205,25 +206,44 @@ data <- full %>%
 # Following Main Analysis
 ```{r}
 # intent to treat
-## tirs arm 
-### same number of people? 2239, check ; ABD cases 198 check :)
+## check people and events
+### tirs 2239, check ; ABD cases 198 check :)
 itt_tirs <- data %>% 
   filter(arm == 1) %>% 
   filter(Pos_All == 1)
-### cumulative incidence
+### control arm = 2222, check ; 199 ABD cases check
+itt_ctrl <- data %>% 
+  filter(arm == 0) %>% 
+  filter(Pos_All == 1)
+
+## cumulative incidence
+itt.km <- survfit(Surv(entry, exit, Pos_All) ~ arm, data = data)
+ggsurvplot(itt.km, data = data, fun = "event")
+
+
+
+
+
+
+
 # clustering for robust standard errors?
-itt_tirs.cox <- coxph(Surv(entry, exit, Pos_All) ~ 1 + cluster(cluster),
+itt.cox <- coxph(Surv(entry, exit, Pos_All) ~ arm + cluster(cluster),
                       data = data)
 # km estimate from cox model
-itt_tirs.km_cluster <- survfit(itt_tirs.cox)
+itt.km_cluster <- survfit(itt.cox, newdata = data.frame(arm = c(0, 1)))
+summary(itt.km_cluster)
+
+plot(itt.km_cluster, col = c("tomato", "cadetblue"))
+
+
 # cumulative incidence and 95% CI
-tirsdf <- data.frame(
-  time = itt_tirs.km_cluster$time,
-  c_incidence = 1 - itt_tirs.km_cluster$surv,
-  ci_lower = 1 - itt_tirs.km_cluster$upper,
-  ci_upper = 1 - itt_tirs.km_cluster$lower
+itt_df <- data.frame(
+  time = itt.km_cluster$time,
+  c_incidence = 1 - itt.km_cluster$surv,
+  ci_lower = 1 - itt.km_cluster$upper,
+  ci_upper = 1 - itt.km_cluster$lower
 )
-tirsdf[nrow(tirsdf),]
+itt_df[nrow(itt_df),]
 library(ggplot2)
 ggplot(tirsdf, aes(x = time, y = c_incidence)) +
   geom_step(color = "cadetblue") +
@@ -233,10 +253,7 @@ ggplot(tirsdf, aes(x = time, y = c_incidence)) +
   theme_classic()
 
 
-## control arm = 2222, check ; 199 ABD cases check
-itt_ctrl <- data %>% 
-  filter(arm == 0) %>% 
-  filter(Pos_All == 1)
+
 
 
 ```
