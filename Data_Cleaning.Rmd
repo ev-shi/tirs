@@ -26,9 +26,6 @@ library(survival)
 import data:
 ```{r}
 ## enrollment data (everyone)
-# rn1 <- here::here("data", "RN1.csv") %>%
-#   rio::import() %>% 
-#   dplyr::as_tibble()
 cohort <- here::here("data", "cohort.csv") %>% # entry/exit times
   rio::import() %>% 
   dplyr::as_tibble()
@@ -51,8 +48,14 @@ actsurv <- here::here("data", "VAR6.csv") %>% # active surveillance results
 sero <- here::here("data", "Serology Survey.csv") %>% # serology test results
   rio::import() %>% 
   dplyr::as_tibble()
+
+## entomology (everyone?)
+ento <- here::here("data", "TIRS_database_entom.csv") %>% # including coverage
+  rio::import() %>% 
+  dplyr::as_tibble()
 ```
 
+# Data Cleaning
 merge prep:
 ```{r}
 ## merge....prep?
@@ -85,12 +88,6 @@ actsp <- actsurv %>%
   relocate(PPID) %>% 
   mutate(evnt_year = year(mdy(var6_rpt_date))) %>% 
   relocate(evnt_year, .after = record_id) # %>% 
-  # # ok var6_abv_pos is total, should i also make a variable that's by season???
-  # mutate(Pos_2021 = ifelse((evnt_year == 2021 & var6_abv_pos___1 == 1), 1, 0),
-  #        Pos_2022 = ifelse((evnt_year == 2022 & var6_abv_pos___1 == 1), 1, 0),
-  #        Pos_2023 = 
-  #          ifelse((evnt_year == 2023 & var6_abv_pos___1 == 1), 1, 0)) %>% 
-  # relocate(c(var6_abv_pos___1, Pos_2021, Pos_2022, Pos_2023), .after = evnt_year)
 
 ### by house, not by participant
 ### so just get rid of redcap names
@@ -104,6 +101,26 @@ serop <- sero %>% ## ok want to figure out how to add this - to main dataset?
             redcap_repeat_instance)) %>% 
   mutate(PPID = paste0(record_id, LETTERS[ss_pt_id])) %>% 
   relocate(PPID)
+
+## by house and visit
+### check to see if they were still enrolled?
+entop <- ento %>% 
+  full_join(cohortp, by = "record_id", relationship = "many-to-many")
+  # drop houses that didn't have participants
+entop <- entop %>% 
+  filter(!is.na(PPID)) %>% 
+  relocate(c(PPID, record_id, Enrolm_Date, Exit_Date, ent2_date, arm, coverage),
+          .before = timepoint) %>% 
+  filter(mdy(ent2_date) >= Enrolm_Date & mdy(ent2_date) <= Exit_Date) %>% 
+  group_by(PPID, record_id, timepoint, ent2_visit) %>% 
+  # tirs arm nonzero coverage for each visit, control 0 coverage for each visit
+  summarize(all_visits = ifelse(arm == 1, all(coverage != 0), 
+                                 all(coverage == 0)),
+            .groups = "drop") %>% 
+  group_by(record_id) %>% 
+  # true for all years in study?
+  summarize(per_protocol = as.integer(all(all_visits)),
+            .groups = "drop")
 ```
 
 merge together:
@@ -119,20 +136,17 @@ full <- cohortp %>%
          trial_arm = a_arm,
          block_type = a_block) %>% 
   relocate(c(Pos_All, trial_arm, block_type), .after = evnt_year)
-
-# entry: beginning of peak ABD season (July 1 202X)? not enrollment date
-# exit: date of symptom onset (var6_symp_date), 
-#       or end of study period? (Dec 31 202X)
-# indicator: var6_abv_pos - 1 yes, 0 and NA censored?
 ```
 
-calculating person-time??
+function to calculate person-time since we're only looking at active 
+surveillance during peak ABD season (July 1 - December 31)
 ```{r}
 person_time <- function(time1, time2) {
   # start and end dates for active ABD seasons
   season_start <- mdy(c("07/01/2021", "07/01/2022", "07/01/2023"))
   season_end <- mdy(c("12/31/2021", "12/31/2022", "12/31/2023"))
   
+  # initialize vector to hold total person-time for each individual
   total <- rep(0, length(time1))
   
   for (i in seq_along(season_start)){
@@ -149,7 +163,7 @@ person_time <- function(time1, time2) {
 }
 ```
 
-formatting dataset/cleaning?:
+formatting and cleaning full datset to use for analysis:
 ```{r}
 # want one line per person, include all their person-time (only active period)
 data <- full %>% 
@@ -181,14 +195,15 @@ data <- full %>%
   filter(exit != 0) # omg 4461 children same as in paper yay
 ```
 
+# Following Main Analysis
+```{r}
+# replicating table 1
+```
 
-* considerations from original analysis
-- limited to season (person-time only included july-dec?)
-- within cluster center vs periphery (a_block; 1 central, 2 peripheral, 
-  3 external)
-- 25 second cases/recurrent events -- only until FIRST symptomatic abd
 
-# clustering
+
+# notes
+clustering
 - way to look at clustering at hh level
 - extra risk if someone in hh, block, cluster has it
 -- ajusting for cluster, does hh member put me at extra risk
@@ -199,18 +214,4 @@ data <- full %>%
 - check that the numbers match up, and if i can reproduce table 1
 -- N, ABD cases, cum. incidence --> then work on TIRS efficacy
 - per protocol based on coverage 
-
-cleaning???? how to organize dataset?
-```{r}
-# cleaning ? organizing merged dataset
-full_org <- full %>%
-  mutate(Pos_All = ifelse(is.na(Pos_All), 0, Pos_All)) %>%
-  # each individual has an ID, house id, and year/season?
-  crossing(event_year = c(2022, 2023, 2024)) %>%
-  mutate(evnt_year = ifelse(is.na(evnt_year), NA_integer_,
-                            ifelse(evnt_year == 
-                                     event_year, evnt_year, NA_integer_)),
-         Pos_All = ifelse(is.na(evnt_year), 0, Pos_All)) %>% 
-  relocate(event_year, .before = evnt_year)
-```
 
