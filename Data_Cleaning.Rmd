@@ -198,9 +198,17 @@ data <- full %>%
 
 # Following Main Analysis
 ```{r}
-# checking per protocol...3258 which is way more than 1038 :'(
+# checking per protocol...3258 which is way more than 2075 :'(
 pproto <- data %>% 
   filter(per_protocol == 1)
+
+data %>% 
+  mutate(cluster = str_sub(PPID, 1, 2)) %>% 
+  relocate(c(cluster, trial_arm), .after = record_id) %>%
+  group_by(cluster) %>% 
+  summarize(tirs = sum(arm == 1, na.rm = TRUE),
+            control = sum(arm == 0, na.rm = TRUE),
+            unsure = sum(is.na(arm)))
 
 # replicating table 1
 ```
