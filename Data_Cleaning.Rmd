@@ -125,7 +125,7 @@ entop <- ento %>%
 
 merge together:
 ```{r}
-## big merge???
+## big merge??? and try to fill in some missing data?
 full <- cohortp %>% 
   full_join(actsp, by = c("PPID", "record_id")) %>% # event year + id + house
   relocate(c(Enrolm_Date, Exit_Date, evnt_year), .after = record_id) %>% 
@@ -136,7 +136,12 @@ full <- cohortp %>%
   rename(Pos_All = var6_abv_pos___1,
          trial_arm = a_arm,
          block_type = a_block) %>% 
-  relocate(c(Pos_All, trial_arm, block_type), .after = evnt_year)
+  relocate(c(Pos_All, trial_arm, block_type), .after = evnt_year) %>%
+  # fix trial arm assignment
+  mutate(cluster = str_sub(PPID, 1, 2)) %>% 
+  group_by(cluster) %>% 
+  mutate(arm = first(trial_arm[!is.na(trial_arm)])) %>% 
+  ungroup()
 ```
 
 function to calculate person-time since we're only looking at active 
@@ -193,24 +198,47 @@ data <- full %>%
          exit = person_time(Enrolm_Date, Time2)) %>% 
   relocate(c(entry, exit), .after = record_id) %>% 
   # only including those who contributed person time
-  filter(exit != 0) # omg 4461 children same as in paper yay
+  filter(exit != 0)
+  # omg 4461 children same as in paper yay
 ```
 
 # Following Main Analysis
 ```{r}
-# checking per protocol...3258 which is way more than 2075 :'(
-pproto <- data %>% 
-  filter(per_protocol == 1)
+# intent to treat
+## tirs arm 
+### same number of people? 2239, check ; ABD cases 198 check :)
+itt_tirs <- data %>% 
+  filter(arm == 1) %>% 
+  filter(Pos_All == 1)
+### cumulative incidence
+# clustering for robust standard errors?
+itt_tirs.cox <- coxph(Surv(entry, exit, Pos_All) ~ 1 + cluster(cluster),
+                      data = data)
+# km estimate from cox model
+itt_tirs.km_cluster <- survfit(itt_tirs.cox)
+# cumulative incidence and 95% CI
+tirsdf <- data.frame(
+  time = itt_tirs.km_cluster$time,
+  c_incidence = 1 - itt_tirs.km_cluster$surv,
+  ci_lower = 1 - itt_tirs.km_cluster$upper,
+  ci_upper = 1 - itt_tirs.km_cluster$lower
+)
+tirsdf[nrow(tirsdf),]
+library(ggplot2)
+ggplot(tirsdf, aes(x = time, y = c_incidence)) +
+  geom_step(color = "cadetblue") +
+  geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper), 
+              alpha = 0.3, fill = "cadetblue") + 
+  labs(x = "Time", y = "Cumulative Incidence") +
+  theme_classic()
 
-data %>% 
-  mutate(cluster = str_sub(PPID, 1, 2)) %>% 
-  relocate(c(cluster, trial_arm), .after = record_id) %>%
-  group_by(cluster) %>% 
-  summarize(tirs = sum(arm == 1, na.rm = TRUE),
-            control = sum(arm == 0, na.rm = TRUE),
-            unsure = sum(is.na(arm)))
 
-# replicating table 1
+## control arm = 2222, check ; 199 ABD cases check
+itt_ctrl <- data %>% 
+  filter(arm == 0) %>% 
+  filter(Pos_All == 1)
+
+
 ```
 
 
