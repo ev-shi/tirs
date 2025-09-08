@@ -204,6 +204,7 @@ data <- full %>%
 ```
 
 # Following Main Analysis
+Table 1 Cumulative Incidence
 ```{r}
 # intent to treat
 ## check people and events
@@ -238,16 +239,15 @@ estimates %>%
   select(arm, time, cuminc, cuminc_lower, cuminc_upper)
 
 
-## try diff way
+## try diff way?
 # clustering for robust standard errors?
 itt.cox <- coxph(Surv(entry, exit, Pos_All) ~ arm + cluster(cluster),
                       data = data)
 # km estimate from cox model
 itt.km_cluster <- survfit(itt.cox, newdata = data.frame(arm = c(0, 1)))
+          ## ok not the best way i think but for what i need it for prob fine?
 ggsurvplot(itt.km_cluster, fun = "event", data = data)
 s_cluster <- summary(itt.km_cluster)
-
-s_cluster$surv
 
 cluster <- data.frame(
   time = s_cluster$time,
@@ -258,9 +258,25 @@ cluster <- data.frame(
   cuminc_lower = 1 - s_cluster$upper,
   cuminc_upper = 1 - s_cluster$lower
 )
+cluster <- cluster %>% 
+  rename(control_cum_inc = cuminc.1,
+         tirs_cum_inc = cuminc.2,
+         control_lower = cuminc_lower.1,
+         control_upper = cuminc_upper.1,
+         tirs_lower = cuminc_lower.2,
+         tirs_upper = cuminc_upper.2) %>% 
+  relocate(c(control_cum_inc, control_lower, control_upper, tirs_cum_inc, 
+             tirs_lower, tirs_upper), .after = time)
 
 cluster[nrow(cluster),]
-
+```
+Table 1 TIRS efficacy
+```{r}
+summary(itt.cox)
+# efficacy estimated as 1 - unadjusted cox hazard ratio: 3.9%
+1 - exp(coef(itt.cox))
+# in paper: -28.1% - 26.7%, using permutation-based CI
+1 - exp(confint(itt.cox))
 ```
 
 
