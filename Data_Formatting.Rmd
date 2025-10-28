@@ -1,0 +1,53 @@
+---
+title: "Data Formatting"
+author: "Evelyn Shi"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+# Load packages
+library(tidyverse) # for {dplyr} functions
+library(rio) # for importing data
+library(here) # for easy file referencing
+library(sf) # for shapefiles
+library(lubridate) # to work with dates
+```
+
+# Raw Data
+import data:
+```{r}
+## cases
+suspected <- here::here("data", "TIRS_SINAVE_combined22_23_blockID.csv") %>%
+  rio::import() %>% 
+  dplyr::as_tibble()
+```
+
+# Cleaning
+```{r}
+# Cases only (no negative diagnoses)
+cases <- suspected %>% 
+  filter(Diagnosis != "Negativo") %>% 
+  filter(Comentario != "Negativo")
+
+# missing data?
+sum(is.na(cases$MZTIRS))
+which(is.na(cases$MZTIRS))
+cases[63,]
+
+cases <- cases %>% 
+  mutate(block_id = ifelse(is.na(MZTIRS), str_sub(ID, 3, 4), MZTIRS))
+```
+
+Format to match c.positives.alpha.txt
+```{r}
+positives <- cases %>% 
+  # IDperson, IDblock, IDcluster, date_symptoms, TIRS_arm, coordinates
+  select(ID, block_id, CLUSTER, Week_onset, Arm_1TIRS, lon, lat) %>% 
+  rename(person_id = ID,
+         cluster_id = CLUSTER,
+         week_sympt_onset = Week_onset,
+         trial_arm = Arm_1TIRS)
+
+```
+
