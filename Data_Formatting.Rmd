@@ -51,3 +51,13 @@ positives <- cases %>%
 
 ```
 
+global.mcmc.txt
+```{r}
+#Nindiv, Nnegs, Nclusters, NDAYS, DAY0, DAYL, SUSCEPTIBILITY_XI1, XI2, W
+#TRANSMISSIBILITY_RHO, MAX_GENTIME, sigma_alpha, beta, gamma, Gta, Gtb
+global.mcmc.txt <- c(
+  as.numeric(nrow(positives)), #Nindiv
+  0                            #Nnegs -- don't need in final model 
+)
+```
+
