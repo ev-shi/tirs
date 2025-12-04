@@ -35,7 +35,15 @@ clusters <- st_read(dsn = here("data"),
 ## Some Cleaning
 Only actual cases
 ```{r}
-cases <- sus %>% filter(Diagnosis != "Negativo")
+cases <- sus %>% 
+  filter(Diagnosis != "Negativo") %>% 
+  filter(Comentario != "Negativo" | is.na(Comentario))
+
+unique(cases$Diagnosis) # only actual diagnoses
+#unique(cases$Comentario) # there was one that had Negativo as a comment rather than under diagnosis
+
+cases$ABD_type <- sub('.*\\+ ', '', cases$Diagnosis)
+cases$ABD_type <- sub(' *.', '', cases$ABD_type)
 ```
 
 # Map
@@ -56,7 +64,55 @@ ggsave("cases_source.pdf")
 ```
 
 # Table 1
+Formatting
 ```{r}
+cases$Arm_1TIRS <- 
+  factor(cases$Arm_1TIRS, levels = c(0, 1),
+         labels = c("Control",
+                    "TIRS Intervention"))
+cases$Year <- factor(cases$Year)
+cases$Age <- as.numeric(cases$Age)
 
+label(cases$Age) <- "Age"
+label(cases$Arm_1TIRS) <- "Trial Arm"
+label(cases$Year) <- "Year*"
+label(cases$Week_onset) <- "Week of Symptom Onset <sup>†</sup>"
+
+footnote <- "*In 2023, there was a large outbreak of DENV-3 <br> <sup>†</sup> Weeks into ABD season, beginning July 1<sup>st</sup>"
+```
+
+Make Table
+```{r}
+table1(~ Age + Year + Arm_1TIRS + Week_onset | Source, data = cases,
+       footnote=footnote)
+```
+
+# Case Data over Time
+Time...series....?
+
+With scaled y axis
+```{r}
+cases %>% 
+  count(Year, Week_onset) %>% 
+  ggplot(aes(x = Week_onset, y = n)) +
+  geom_col() +
+  facet_wrap(~ Year, ncol = 1, scales = "free_y") +
+  labs(x = "Week of Symptom Onset (Weeks into ABD Season, beginning July 1)",
+       y = "Number of Cases",
+       title = "Cases by Week") +
+  scale_x_continuous(breaks = seq(min(cases$Week_onset), max(cases$Week_onset), by = 2))
+```
+
+without scaled y axis
+```{r}
+cases %>% 
+  count(Year, Week_onset) %>% 
+  ggplot(aes(x = Week_onset, y = n)) +
+  geom_col() +
+  facet_wrap(~ Year, ncol = 1) +
+  labs(x = "Week of Symptom Onset (Weeks into ABD Season, beginning July 1)",
+       y = "Number of Cases",
+       title = "Cases by Week") +
+  scale_x_continuous(breaks = seq(min(cases$Week_onset), max(cases$Week_onset), by = 2))
 ```
 
