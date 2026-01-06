@@ -172,13 +172,14 @@ person_time <- function(time1, time2) {
 
 formatting and cleaning full datset to use for analysis:
 ```{r}
-# want one line per person, include all their person-time (only active period)
 data$active_complete <- ifelse(data$Pos_All != 1, 1, 
        ifelse(data$var6_active_surveillance_results_complete == 2, 1,  0))
+
+# want one line per person, include all their person-time (only active period)
 data <- full %>% 
   # only those with positive events and have complete results???
-  filter(active_complete == 1) %>% 
-  # only take first event/one line per id
+  # filter(active_complete == 1) %>% 
+  # # only take first event/one line per id
   group_by(PPID) %>% 
   filter(row_number() == {
     event <- which(Pos_All==1)
@@ -247,13 +248,52 @@ tirs_main_denv_ac %>%
 new_cases <- anti_join(tirs_main_denv_ac, tirs_main_denv) # 15 cases that are in this one but not in the other
 
 # taking a look at these cases...
-data_all_cases %>% filter(PPID == "232830A") %>% 
+data_all_cases %>% filter(PPID == "495113C") %>% 
   relocate(c(var6_case___1, var6_case___2, var6_case___3, var6_case___4,
              var6_case___5), .before = trial_arm)
 
-data %>% filter(PPID == "232830A") %>% 
+data %>% filter(PPID == "495113C") %>% 
   relocate(c(var6_case___1, var6_case___2, var6_case___3, var6_case___4,
              var6_case___5), .before = trial_arm)
+
+# total number of cases? 422
+all_pos <- full %>% filter(Pos_All==1) # ok so this is good...was my problem just using data instead of full?
+denv_cases <- all_pos %>% filter(var6_case___1 == 1 & var6_case___2  != 1 &
+                                var6_case___3  != 1 & var6_case___4  != 1 &
+                                var6_case___5  != 1)
+zikv_cases <- all_pos %>% filter(var6_case___1 != 1 & var6_case___2  == 1 &
+                                var6_case___3  != 1 & var6_case___4  != 1 &
+                                var6_case___5  != 1)
+chikv_cases <- all_pos %>% filter(var6_case___1 != 1 & var6_case___2  != 1 &
+                                var6_case___3  == 1 & var6_case___4  != 1 &
+                                var6_case___5  != 1)
+# determine all other cases
+narrow_down <- all_pos %>% 
+  anti_join(denv_cases) %>% 
+  anti_join(zikv_cases) %>% 
+  anti_join(chikv_cases) %>% 
+  relocate(c(var6_denv_elisa_res, var6_denv_elisa_res_2,
+             var6_zika_elisa_res, var6_zika_elisa_res_2,
+             var6_chikv_elisa_res, var6_chikv_elisa_res_2), 
+           .before = record_id)
+
+# put all denv/chikv co-infections together
+all_pos <- all_pos %>% 
+  mutate(denv_case = ifelse((var6_case___1 == 1 & var6_case___2  != 1 &
+                                var6_case___3  != 1 & var6_case___4  != 1 &
+                                var6_case___5  != 1), 1, 0),
+         zikv_case = ifelse((var6_case___1 != 1 & var6_case___2  == 1 &
+                                var6_case___3  != 1 & var6_case___4  != 1 &
+                                var6_case___5  != 1), 1, 0),
+         chikv_case = ifelse((var6_case___1 != 1 & var6_case___2  != 1 &
+                                var6_case___3  == 1 & var6_case___4  != 1 &
+                                var6_case___5  != 1), 1, 0),
+         denv_chikv = ifelse(((var6_denv_elisa_res == 1 | 
+                                var6_denv_elisa_res_2 == 1) & 
+                               (var6_chikv_elisa_res == 1 |
+                                  var6_chikv_elisa_res_2 == 1)), 1, 0))
+
+table(all_pos$denv_chikv)
 ```
 
 
