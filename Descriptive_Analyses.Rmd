@@ -18,7 +18,10 @@ pacman::p_load(sf, # spatial
                here, 
                tidyverse, 
                rio, # for importing
-               table1 # make table1
+               table1, # make table1
+               lubridate,
+               ncf, #correlation
+               xtable # export table1
                )
 ```
 
@@ -32,6 +35,43 @@ clusters <- st_read(dsn = here("data"),
                     layer = "Cluster final 2021 actualizado")
 ```
 
+SINAVE raw data
+```{r}
+season21 <- here::here("data", "SINAVE_Data", 
+                       "datos_abiertos_dengue_301221.csv") %>%
+  rio::import() %>% 
+  dplyr::as_tibble()
+
+season22 <- here::here("data", "SINAVE_Data", 
+                       "datos_abiertos_dengue_011222.csv") %>%
+  rio::import() %>% 
+  dplyr::as_tibble()
+
+season23 <- here::here("data", "SINAVE_Data", 
+                       "datos_abiertos_dengue_061223.csv") %>%
+  rio::import() %>% 
+  dplyr::as_tibble()
+```
+
+
+## Questions
+```{r}
+# are there suspected cases for both sources for both years?
+table(sus$Source, sus$Year)
+
+# diagnosis labels for each source
+sinave <- sus %>% filter(Source=="SINAVE")
+tirs <- sus %>% filter(Source=="TIRS")
+unique(sinave$Diagnosis)
+unique(tirs$Diagnosis)
+
+# only dengue?
+tirs_DENV <- tirs %>% filter(str_detect(Diagnosis, "DENV")) # 245 cases
+table(tirs_DENV$Year, tirs_DENV$Diagnosis)
+# what DENV diagnosis, for which years?
+```
+
+
 ## Some Cleaning
 Only actual cases
 ```{r}
@@ -44,6 +84,39 @@ unique(cases$Diagnosis) # only actual diagnoses
 
 cases$ABD_type <- sub('.*\\+ ', '', cases$Diagnosis)
 cases$ABD_type <- sub(' *.', '', cases$ABD_type)
+```
+
+SINAVE Data
+```{r}
+s21 <- season21 %>% 
+  # only want data for Merida (050 MUNICIPO_RES and 31 ENTIDAD_RES)
+  filter(MUNICIPIO_RES == 50 & ENTIDAD_RES == 31) %>% 
+  # change symptom onset date to match cases dataset (i.e., weeks since 
+  #  start of ABD season)
+  mutate(Week_onset = ymd(FECHA_SIGN_SINTOMAS),
+         Week_onset = epiweek(Week_onset), #epiweek????
+         Year = year(FECHA_SIGN_SINTOMAS)) %>% 
+  relocate(c(FECHA_SIGN_SINTOMAS, Week_onset), .before = ID_REGISTRO)
+
+s22 <- season22 %>% 
+  # only want data for Merida (050 MUNICIPO_RES and 31 ENTIDAD_RES)
+  filter(MUNICIPIO_RES == 50 & ENTIDAD_RES == 31) %>% 
+  # change symptom onset date to match cases dataset (i.e., weeks since 
+  #  start of ABD season)
+  mutate(Week_onset = ymd(FECHA_SIGN_SINTOMAS),
+         Week_onset = epiweek(Week_onset), #epiweek????
+         Year = year(FECHA_SIGN_SINTOMAS)) %>%
+  relocate(c(FECHA_SIGN_SINTOMAS, Week_onset), .before = ID_REGISTRO)
+
+s23 <- season23 %>% 
+  # only want data for Merida (050 MUNICIPO_RES and 31 ENTIDAD_RES)
+  filter(MUNICIPIO_RES == 50 & ENTIDAD_RES == 31) %>% 
+  # change symptom onset date to match cases dataset (i.e., weeks since 
+  #  start of ABD season)
+  mutate(Week_onset = ymd(FECHA_SIGN_SINTOMAS),
+         Week_onset = epiweek(Week_onset), #epiweek????
+         Year = year(FECHA_SIGN_SINTOMAS)) %>%
+  relocate(c(FECHA_SIGN_SINTOMAS, Week_onset), .before = ID_REGISTRO)
 ```
 
 # Map
@@ -78,41 +151,73 @@ label(cases$Arm_1TIRS) <- "Trial Arm"
 label(cases$Year) <- "Year*"
 label(cases$Week_onset) <- "Week of Symptom Onset <sup>†</sup>"
 
-footnote <- "*In 2023, there was a large outbreak of DENV-3 <br> <sup>†</sup> Weeks into ABD season, beginning July 1<sup>st</sup>"
+footnote <- "*In 2023, there was a large outbreak of DENV-3 <br> <sup>†</sup> Week of the year"
 ```
 
 Make Table
 ```{r}
-table1(~ Age + Year + Arm_1TIRS + Week_onset | Source, data = cases,
+case_tab <- table1(~ Age + Year + Arm_1TIRS + Week_onset | Source, data = cases,
        footnote=footnote)
+case_tab <- as.data.frame(case_tab)
+print(xtable(case_tab, type = "latex"), file = "case_tab.tex")
 ```
 
 # Case Data over Time
-Time...series....?
-
-With scaled y axis
+Combine all SINAVE data? all data in general? 
 ```{r}
-cases %>% 
-  count(Year, Week_onset) %>% 
-  ggplot(aes(x = Week_onset, y = n)) +
-  geom_col() +
-  facet_wrap(~ Year, ncol = 1, scales = "free_y") +
-  labs(x = "Week of Symptom Onset (Weeks into ABD Season, beginning July 1)",
-       y = "Number of Cases",
-       title = "Cases by Week") +
-  scale_x_continuous(breaks = seq(min(cases$Week_onset), max(cases$Week_onset), by = 2))
+sinave <- do.call("rbind", list(s21, s22, s23))
+
+table(sinave$ESTATUS_CASO) # 1 likely; 2 confirmed; 3 discarded
+
+# we want only confirmed cases? (ESTATUS_CASO == 2)
+sinave_cases <- sinave %>% 
+  filter(ESTATUS_CASO == 2)
 ```
 
-without scaled y axis
+and get case counts
 ```{r}
-cases %>% 
+sinave_case_num <- sinave_cases %>% 
   count(Year, Week_onset) %>% 
-  ggplot(aes(x = Week_onset, y = n)) +
-  geom_col() +
+  mutate(Year = as.character(Year))
+trial_case_num <- cases %>% 
+  count(Year, Week_onset) %>% 
+  st_drop_geometry() %>% 
+  mutate(Year = as.character(Year)) %>% 
+  add_row(Year = "2021", Week_onset = 1, n = 0)
+```
+
+With same y axis
+```{r}
+ggplot() +
+  geom_col(data = sinave_case_num,
+           aes(x = Week_onset, y = n, fill = "SINAVE"),
+           alpha = 0.6) + 
+  geom_col(data = trial_case_num,
+           aes(x = Week_onset, y = n, fill = "TIRS")) +
   facet_wrap(~ Year, ncol = 1) +
-  labs(x = "Week of Symptom Onset (Weeks into ABD Season, beginning July 1)",
+  scale_fill_manual(values = c("TIRS" = "steelblue",
+                               "SINAVE" = "firebrick")) +
+  labs(x = "Week of Symptom Onset",
        y = "Number of Cases",
-       title = "Cases by Week") +
-  scale_x_continuous(breaks = seq(min(cases$Week_onset), max(cases$Week_onset), by = 2))
+       fill = "Source",
+       title = "ABD Cases by Week (TIRS vs. SINAVE)") +
+  scale_x_continuous(
+    breaks = seq(1, 53, by = 2)
+  ) +
+  theme_classic()
+ggsave("cases_by_week.pdf")
 ```
+
+# Spatial?
+Correlogram
+want to look at correlation between case location and....cluster?????? uh oh
+or cluster and number of cases?? does that even make sense
+```{r}
+case_coords <- st_coordinates(cases)
+cluster_coords <- st_coordinates(clusters)
+
+# does this work????
+corr <- correlog()
+```
+
 
