@@ -277,6 +277,15 @@ narrow_down <- all_pos %>%
              var6_chikv_elisa_res, var6_chikv_elisa_res_2), 
            .before = record_id)
 
+narrow_down <- all_pos %>% 
+  filter(denv_case == 0 & zikv_case == 0 & chikv_case == 0 & 
+           denv_chikv == 0) %>% 
+  filter(denv_zikv != 1) %>% 
+  relocate(c(var6_denv_elisa_res, var6_denv_elisa_res_2,
+             var6_zika_elisa_res, var6_zika_elisa_res_2,
+             var6_chikv_elisa_res, var6_chikv_elisa_res_2), 
+           .before = record_id)
+
 # put all denv/chikv co-infections together
 all_pos <- all_pos %>% 
   mutate(denv_case = ifelse((var6_case___1 == 1 & var6_case___2  != 1 &
@@ -291,9 +300,50 @@ all_pos <- all_pos %>%
          denv_chikv = ifelse(((var6_denv_elisa_res == 1 | 
                                 var6_denv_elisa_res_2 == 1) & 
                                (var6_chikv_elisa_res == 1 |
-                                  var6_chikv_elisa_res_2 == 1)), 1, 0))
+                                  var6_chikv_elisa_res_2 == 1) & 
+                                !is.na(var6_denv_elisa_res_2)), 1, 0),
+         denv_zikv = ifelse(((var6_denv_elisa_res == 1 | 
+                                var6_denv_elisa_res_2 == 1) & 
+                               (var6_zika_elisa_res == 1 |
+                                  var6_zika_elisa_res_2 == 1)), 1, 0),
+         denv_zikv = ifelse((var6_pcr_res___1 == 1 & var6_pcr_res___2 == 1),
+                            1, denv_zikv),
+         denv_zikv = ifelse((denv_case == 0 & zikv_case == 0 & chikv_case == 0 &
+                               denv_chikv == 0), 1, 0))
 
-table(all_pos$denv_chikv)
+table(all_pos$denv_zikv)
+
+# oh oops add this to the entire dataset
+full_bycase <- full %>% 
+  mutate(denv_case = ifelse((var6_case___1 == 1 & var6_case___2  != 1 &
+                                var6_case___3  != 1 & var6_case___4  != 1 &
+                                var6_case___5  != 1 & Pos_All == 1), 1, 0),
+         zikv_case = ifelse((var6_case___1 != 1 & var6_case___2  == 1 &
+                                var6_case___3  != 1 & var6_case___4  != 1 &
+                                var6_case___5  != 1 & Pos_All == 1), 1, 0),
+         chikv_case = ifelse((var6_case___1 != 1 & var6_case___2  != 1 &
+                                var6_case___3  == 1 & var6_case___4  != 1 &
+                                var6_case___5  != 1 & Pos_All == 1), 1, 0),
+         denv_chikv = ifelse((Pos_All == 1 & (var6_denv_elisa_res == 1 | 
+                                var6_denv_elisa_res_2 == 1) & 
+                               (var6_chikv_elisa_res == 1 |
+                                  var6_chikv_elisa_res_2 == 1) & 
+                                !is.na(var6_denv_elisa_res_2)), 1, 0),
+         denv_zikv = ifelse((Pos_All == 1 & (var6_denv_elisa_res == 1 | 
+                                var6_denv_elisa_res_2 == 1) & 
+                               (var6_zika_elisa_res == 1 |
+                                  var6_zika_elisa_res_2 == 1)), 1, 0),
+         denv_zikv = ifelse((var6_pcr_res___1 == 1 & var6_pcr_res___2 == 1
+                             & Pos_All == 1), 1, denv_zikv),
+         denv_zikv = ifelse((denv_case == 0 & zikv_case == 0 & chikv_case == 0 &
+                               denv_chikv == 0 & Pos_All == 1), 1, 0)) %>% 
+  relocate(c(denv_case, zikv_case, chikv_case, denv_chikv, denv_zikv), .before =
+             record_id) %>% 
+  mutate(denv_case = ifelse(is.na(denv_case), 0, denv_case),
+         zikv_case = ifelse(is.na(zikv_case), 0, zikv_case),
+         chikv_case = ifelse(is.na(chikv_case), 0, chikv_case),
+         denv_chikv = ifelse(is.na(denv_chikv), 0, denv_chikv),
+         denv_zikv = ifelse(is.na(denv_zikv), 0, denv_zikv))
 ```
 
 
