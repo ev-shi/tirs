@@ -173,7 +173,11 @@ person_time <- function(time1, time2) {
 formatting and cleaning full datset to use for analysis:
 ```{r}
 # want one line per person, include all their person-time (only active period)
+data$active_complete <- ifelse(data$Pos_All != 1, 1, 
+       ifelse(data$var6_active_surveillance_results_complete == 2, 1,  0))
 data <- full %>% 
+  # only those with positive events and have complete results???
+  filter(active_complete == 1) %>% 
   # only take first event/one line per id
   group_by(PPID) %>% 
   filter(row_number() == {
@@ -202,6 +206,56 @@ data <- full %>%
   filter(exit != 0)
   # omg 4461 children same as in paper yay
 ```
+
+# TIRS cases vs. combined dataset (provided dataset) cases
+```{r}
+tirs_main_denv <- data %>% filter(var6_case___1 == 1)
+tirs_main_denv %>% 
+  group_by(evnt_year) %>% 
+  summarize(count = n())
+# 292 denv cases here...297 in the main paper...look at inconclusive?
+
+data %>% filter(var6_case___5 == 1) # six inconclusive...not listed as an abv case tho
+
+# well ok we have the same no. of abd cases right? let's start there
+abd_cases <- data %>% filter(Pos_All == 1) #397 instead of 422? ohh maybe bc it's only looking at first cases?
+
+# looking at all cases (not just first ABD case)
+data_all_cases <- full %>% 
+  # if pos_all == 0 did not experience event -- censored 
+  mutate(Pos_All = ifelse(is.na(Pos_All), 0, Pos_All),
+         Symp_Date = mdy(var6_symp_date),
+         Time2 = if_else(Pos_All == 1 & Symp_Date < Exit_Date, Symp_Date,
+                        Exit_Date)) %>% 
+  relocate(c(Symp_Date, Time2), .after = Exit_Date) %>%
+  # 22 had missing enrollment/exit dates...drop?
+  filter(!is.na(Enrolm_Date)) %>% 
+  # calculating person-time in days
+  rowwise() %>% 
+  mutate(entry = 0,
+         exit = person_time(Enrolm_Date, Time2)) %>% 
+  relocate(c(entry, exit), .after = record_id) %>% 
+  # only including those who contributed person time
+  filter(exit != 0)
+  # there are 4563 hmm
+
+# let's try this again
+tirs_main_denv_ac <- data_all_cases %>% filter(var6_case___1 == 1)
+tirs_main_denv_ac %>% 
+  group_by(evnt_year) %>% 
+  summarize(count = n()) 
+new_cases <- anti_join(tirs_main_denv_ac, tirs_main_denv) # 15 cases that are in this one but not in the other
+
+# taking a look at these cases...
+data_all_cases %>% filter(PPID == "232830A") %>% 
+  relocate(c(var6_case___1, var6_case___2, var6_case___3, var6_case___4,
+             var6_case___5), .before = trial_arm)
+
+data %>% filter(PPID == "232830A") %>% 
+  relocate(c(var6_case___1, var6_case___2, var6_case___3, var6_case___4,
+             var6_case___5), .before = trial_arm)
+```
+
 
 # Following Main Analysis
 Table 1 Cumulative Incidence
