@@ -132,7 +132,7 @@ oh god i should check if the SINAVE no. of cases match too
 ```{r}
 # sinave has 551 obs....oh my god are some of them TIRS cases that were picked
 # up? are the TIRS cases the extra ones the MoH didn't catch???
-
+sinave_block <- read_csv("data/TIRS_SINAVE_combined22_23_blockID.csv")
 # all moh data including block_id from gonzalo
 sub_sinave_block <- sinave_block %>% 
   filter(Source == "SINAVE") %>% # 511 sinave cases...are 82 of them from TIRS..?
@@ -164,7 +164,6 @@ young_trial <- tirs_all_denv %>% # 327 cases
          trial_arm = arm,
          source = source)
 
-
 #ok...do any of the sinave and tirs match by symptom onset date? age? cluster? block?
 young_sinave %>% arrange(cluster_id, block_id, event_year)
 young_trial %>% arrange(cluster_id, block_id, event_year)
@@ -180,16 +179,180 @@ fuzzy_inner_join(young_sinave, young_trial,
   relocate(c(id.x, id.y, symp_onset.x, symp_onset.y,
              cluster_id.x, cluster_id.y, block_id.x, block_id.y, age.x, age.y, 
              event_year.x, event_year.y, trial_arm.x, trial_arm.y), 
-           .before = id.x)
-#ok some are definite matches (symptom onset dates match): 362218A 2022, 432732B
-# 2022, 
-# some are prolly? symptoms off by a few days?: 562624A 2023, 292223B 2023,
-# 551712A 2023, 551725A 2023, 551918A 2023, 551921B 2023, 551921C 2023,
-# 551712A 2023, 551725A 2023, 551918A 2023, 551921B 2023, 551921C 2023,
-# 553214B 2023, 551511A 2023, 551712A 2023
-# okay i'm just going to assume these are basically the same people...maybe some
-# that definitely aren't matches? those include: 362218A in 2022, 191126A 2023,
-# 311412A 2023, 251424A 2023
+           .before = id.x) %>% 
+  # same age and block
+  filter((block_id.x == block_id.y) & (age.x == age.y))
+  # # only show those that have a different age or different block or both? 
+  # # oh did i write it wrong earlier
+  # filter(((block_id.x != block_id.y) & (age.x == age.y)) | 
+  #          ((block_id.x == block_id.y) & (age.x != age.y)) |
+  #          ((block_id.x != block_id.y) & (age.x != age.y)))
+
+# could be same person? f it i'm looking for exact symptom dates:
+# 341547A/31041AAKP070214, 162511B/31050LOCS101218
+# gah there are definitely some duplicates maybe they've already matched the 
+# TIRS/moh ones???
+```
+
+Why more sinave cases than what was reported in the paper??
+- exclude all children????
+```{r}
+old_sinave <- sub_sinave_block %>% 
+  filter(age > 18)
+table(old_sinave$trial_arm)
+
+# dean: control, 202 cases • TIRS, 150 cases (of all ABD! not just dengue)
+# well, actually no? didn't the paper say sinave was really all just dengue? so
+# the numbers should be the same
+
+# the cases that for some reason weren't in the sinave TIRS (all others covered)
+only_in_one$id  #82 of these 
+oio_tirs <- tirs_all_denv[(tirs_all_denv$PPID %in% only_in_one$id),] #86 here, so some had two events
+# and the second one wasn't picked up by sinave?? orrrr it's not listed as from TIRS...
+# what are the extras??
+
+anti_join(oio_tirs, only_in_one, by=c("PPID" = "id", "evnt_year" = "event_year"))
+# so sinave didn't pick up on earlier (2021) events from 222111B and 232830A
+
+# ok now this is all 82 events that were caught by TIRS but not by SINAVE
+oio_tirs <- oio_tirs %>% filter(!((PPID == "222111B" | PPID == "232830A") & 
+                                   (evnt_year == "2022" | evnt_year == "2023")))
+
+# out of the 82 cases in "only in one" do any of them match with source = sinave?
+young_oio <- oio_tirs %>% # 82 not found in source = tirs
+  mutate(source = "Trial Data",
+         age = as.numeric(round((mdy(var6_symp_date) - mdy(rn2_pt_dob))/365))) %>%
+  select(PPID, evnt_year, var6_symp_date, arm, source, age, cluster, id_block) %>%
+  rename(id = PPID,
+         age = age,
+         event_year = evnt_year,
+         symp_onset = var6_symp_date,
+         cluster_id = cluster,
+         block_id = id_block,
+         trial_arm = arm,
+         source = source)
+# these are all the extra cases from tirs, now to match them with sinave
+
+fuzzy_inner_join(young_sinave, young_oio,
+                 by = c("trial_arm", "event_year", "cluster_id", "age", 
+                        "block_id"),
+                 match_fun = list(`==`, `==`, `==`, 
+                                  function(x, y) abs(x - y) <= 1,
+                                  function(x, y) abs(x - y) <= 2)) %>% 
+  relocate(c(id.x, id.y, symp_onset.x, symp_onset.y,
+             cluster_id.x, cluster_id.y, block_id.x, block_id.y, age.x, age.y, 
+             event_year.x, event_year.y, trial_arm.x, trial_arm.y), 
+           .before = id.x) 
+
+# possible matches...: well it's certainly not 82! or should i do left join?
+# 31050MEEA100328	551921C, 31050ZACC120106	151722A, 31050PEGR110706	152828A,
+
+fuzzy_left_join(young_oio, young_sinave,
+                 by = c("trial_arm", "event_year", "cluster_id", "age", 
+                        "block_id"),
+                 match_fun = list(`==`, `==`, `==`, 
+                                  function(x, y) abs(x - y) <= 1,
+                                  function(x, y) abs(x - y) <= 2)) %>% 
+  relocate(c(id.x, id.y, symp_onset.x, symp_onset.y,
+             cluster_id.x, cluster_id.y, block_id.x, block_id.y, age.x, age.y, 
+             event_year.x, event_year.y, trial_arm.x, trial_arm.y), 
+           .before = id.x) 
+
+# most likely to be matches?: 151722A	31050ZACC120106, 152828A	31050PEGR110706
+# 551921C	31050MEEA100328
+
+# so no, the extra tirs cases don't really match up with sinave data...so do i
+# add the tirs cases...??????
+```
+
+And why do we have so many community cases
+```{r}
+# some extra tirs cases...and many more community cases than were given in the
+# paper
+
+#...sinave isn't double counting TIRS, is it??
+# sub_sinave_block <- sinave_block %>% 
+#   filter(Source == "SINAVE") %>% # 511 sinave cases...are 82 of them from TIRS..?
+#   select(ID, Age, Year, Onset_symp, Arm_1TIRS, CLUSTER, MZTIRS) %>% 
+#   rename(id = ID,
+#          age = Age,
+#          event_year = Year,
+#          symp_onset = Onset_symp,
+#          cluster_id = CLUSTER,
+#          block_id = MZTIRS,
+#          trial_arm = Arm_1TIRS) %>% 
+#   mutate(source = "MoH Data")
+sub_tirss_block <- sinave_block %>% 
+  filter(Source == "TIRS") %>% # 511 sinave cases...are 82 of them from TIRS..?
+  select(ID, Age, Year, Onset_symp, Arm_1TIRS, CLUSTER, MZTIRS) %>% 
+  rename(id = ID,
+         age = Age,
+         event_year = Year,
+         symp_onset = Onset_symp,
+         cluster_id = CLUSTER,
+         block_id = MZTIRS,
+         trial_arm = Arm_1TIRS) %>% 
+  mutate(source = "MoH Data")
+
+# just to see if there are any overlaps between TIRS cases and sinave cases??
+fuzzy_left_join(sub_sinave_block, sub_tirss_block,
+                 by = c("trial_arm", "event_year", "cluster_id", "age", 
+                        "block_id"),
+                 match_fun = list(`==`, `==`, `==`, 
+                                  function(x, y) abs(x - y) <= 1,
+                                  function(x, y) abs(x - y) <= 2)) %>% 
+  relocate(c(id.x, id.y, symp_onset.x, symp_onset.y,
+             cluster_id.x, cluster_id.y, block_id.x, block_id.y, age.x, age.y, 
+             event_year.x, event_year.y, trial_arm.x, trial_arm.y), 
+           .before = id.x) 
+
+# seems to def be double counted??? ugh but maybe that's just a coincidence
+# 31050CUBS091026	432732B, 31050LOCS101218	162511B, 
+```
+
+```{r}
+fuzzy_left_join(young_oio, young_sinave,
+                 by = c("trial_arm", "event_year", "cluster_id", "age", 
+                        "block_id"),
+                 match_fun = list(`==`, `==`, `==`, 
+                                  function(x, y) abs(x - y) <= 1,
+                                  function(x, y) abs(x - y) <= 2)) %>% 
+  relocate(c(id.x, id.y, symp_onset.x, symp_onset.y,
+             cluster_id.x, cluster_id.y, block_id.x, block_id.y, age.x, age.y, 
+             event_year.x, event_year.y, trial_arm.x, trial_arm.y), 
+           .before = id.x) 
+```
+
+
+```{r}
+only_in_one %>% filter(id == "222111B")
+```
+
+
+
+```{r}
+young_trial %>% filter(id == "331429A")
+young_sinave %>% filter(id == "31050CACM090304")
+
+n <- 2
+target_id <- "050201"
+
+season23 %>% filter(str_detect(as.character(ID_REGISTRO), fixed(target_id)))
+```
+
+### Dengue 2023 Outbreak
+```{r}
+# well, it's not like i can use too much from the extra 82 tirs cases since
+# i don't have their location information
+# so
+
+# All cases, most of TIRS (missing 82), and more than the number of cases
+# Natalie had for community/SINAVE
+denv23 <- sinave_block %>% 
+  filter(Year == 2023) #705 cases
+table(denv23$Source)
+
+# so....regression analysis now?
 ```
 
 
@@ -202,9 +365,6 @@ cases <- sus %>%
 
 unique(cases$Diagnosis) # only actual diagnoses
 #unique(cases$Comentario) # there was one that had Negativo as a comment rather than under diagnosis
-
-cases$ABD_type <- sub('.*\\+ ', '', cases$Diagnosis)
-cases$ABD_type <- sub(' *.', '', cases$ABD_type)
 ```
 
 SINAVE Data
