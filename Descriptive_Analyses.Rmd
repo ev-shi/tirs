@@ -70,6 +70,61 @@ tirs_DENV <- tirs %>% filter(str_detect(Diagnosis, "DENV")) # 245 cases
 table(tirs_DENV$Year, tirs_DENV$Diagnosis)
 # what DENV diagnosis, for which years?
 ```
+Ok now I have a dataset that has all the TIRS cases labeled by infection type 
+WHICH WAS HARDER THAN I THOUGHT IT'D BE
+```{r}
+# all dengue cases from the TIRS trial
+tirs_all_cases <- readRDS("all_cases_labeled.rds")
+tirs_all_denv <- tirs_all_cases %>% 
+  filter(denv_case == 1 | denv_zikv == 1 | denv_chikv == 1) # 327 (includes DENV coinfections)
+
+# all dengue cases given to me in the one file
+tirs_DENV # 245 
+
+#ok? are these all ? mostly? the same people?
+## i'll rbind select variables of each...
+sub_trial_data <- tirs_all_denv %>% # 327 cases
+  select(PPID, evnt_year, var6_symp_date, arm) %>% 
+  rename(id = PPID,
+         event_year = evnt_year,
+         symp_onset = var6_symp_date,
+         trial_arm = arm) %>% 
+  mutate(source = "Trial Data")
+sub_govt_data <- tirs_DENV %>% # 245 cases
+  st_drop_geometry() %>% 
+  select(ID, Year, Onset_symp, Arm_1TIRS) %>% 
+  rename(id = ID,
+         event_year = Year,
+         symp_onset = Onset_symp,
+         trial_arm = Arm_1TIRS) %>% 
+  mutate(source = "MoH Data")
+test_tirs_cases <- rbind(sub_trial_data, sub_govt_data)
+
+# ok how can i make sure to only grab the non-duplicates?
+tirs_all_denv %>% count(PPID) %>% #number of times an indv was infected w dengue
+  count(n) # there are four IDs that have two events, two that have three
+
+# which ones have multiple events
+sub_govt_data %>% count(id) %>% filter(n > 1) # not just first events
+tirs_all_denv %>% count(PPID) %>% 
+  filter(n > 1)
+
+# what about by year? # this works, all one year so group by that
+tirs_all_denv %>% count(PPID, evnt_year) %>% #number of times an indv was infected w dengue
+  count(n) 
+
+test_tirs_cases %>% arrange(id, event_year) #some duplicates...
+only_in_one <- anti_join(sub_trial_data, sub_govt_data, 
+                         by = c("id", "event_year"))
+# ok so all moh cases are included in the TIRS cases (so they're not extra ones
+# picked up by the MoH that weren't picked up by the clinical trial)
+# all extra cases are ones picked up by the trial
+# 82 extra cases
+
+tirs_all_denv %>% filter(PPID %in% only_in_one$id)
+# uhhh all these are different trial arms, different block types (central vs.
+# periphery)
+```
 
 
 ## Some Cleaning

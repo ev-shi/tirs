@@ -344,6 +344,8 @@ full_bycase <- full %>%
          chikv_case = ifelse(is.na(chikv_case), 0, chikv_case),
          denv_chikv = ifelse(is.na(denv_chikv), 0, denv_chikv),
          denv_zikv = ifelse(is.na(denv_zikv), 0, denv_zikv))
+
+saveRDS(full_bycase, file = "all_cases_labeled.rds")
 ```
 
 
