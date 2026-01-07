@@ -21,7 +21,8 @@ pacman::p_load(sf, # spatial
                table1, # make table1
                lubridate,
                ncf, #correlation
-               xtable # export table1
+               xtable, # export table1
+               fuzzyjoin # joining with some inexact
                )
 ```
 
@@ -124,6 +125,71 @@ only_in_one <- anti_join(sub_trial_data, sub_govt_data,
 tirs_all_denv %>% filter(PPID %in% only_in_one$id)
 # uhhh all these are different trial arms, different block types (central vs.
 # periphery)
+```
+
+Do I add all the extra cases?????? from TIRS??? to the list of total cases??
+oh god i should check if the SINAVE no. of cases match too
+```{r}
+# sinave has 551 obs....oh my god are some of them TIRS cases that were picked
+# up? are the TIRS cases the extra ones the MoH didn't catch???
+
+# all moh data including block_id from gonzalo
+sub_sinave_block <- sinave_block %>% 
+  filter(Source == "SINAVE") %>% # 511 sinave cases...are 82 of them from TIRS..?
+  select(ID, Age, Year, Onset_symp, Arm_1TIRS, CLUSTER, MZTIRS) %>% 
+  rename(id = ID,
+         age = Age,
+         event_year = Year,
+         symp_onset = Onset_symp,
+         cluster_id = CLUSTER,
+         block_id = MZTIRS,
+         trial_arm = Arm_1TIRS) %>% 
+  mutate(source = "MoH Data")
+table(sub_sinave_block$trial_arm) # number of tirs/control cases...diff from dean
+
+# uhhh sinave cases that are from children? under 18? 220 of them...are they in tirs???
+young_sinave <- sub_sinave_block %>% 
+  filter(age <= 18)
+
+young_trial <- tirs_all_denv %>% # 327 cases
+  mutate(source = "Trial Data",
+         age = as.numeric(round((mdy(var6_symp_date) - mdy(rn2_pt_dob))/365))) %>%
+  select(PPID, evnt_year, var6_symp_date, arm, source, age, cluster, id_block) %>%
+  rename(id = PPID,
+         age = age,
+         event_year = evnt_year,
+         symp_onset = var6_symp_date,
+         cluster_id = cluster,
+         block_id = id_block,
+         trial_arm = arm,
+         source = source)
+
+
+#ok...do any of the sinave and tirs match by symptom onset date? age? cluster? block?
+young_sinave %>% arrange(cluster_id, block_id, event_year)
+young_trial %>% arrange(cluster_id, block_id, event_year)
+
+# if trial arm, event year, cluster_id match exactly
+# if age, block_id off by +-1?
+fuzzy_inner_join(young_sinave, young_trial,
+                 by = c("trial_arm", "event_year", "cluster_id", "age", 
+                        "block_id"),
+                 match_fun = list(`==`, `==`, `==`, 
+                                  function(x, y) abs(x - y) <= 1,
+                                  function(x, y) abs(x - y) <= 2)) %>% 
+  relocate(c(id.x, id.y, symp_onset.x, symp_onset.y,
+             cluster_id.x, cluster_id.y, block_id.x, block_id.y, age.x, age.y, 
+             event_year.x, event_year.y, trial_arm.x, trial_arm.y), 
+           .before = id.x)
+#ok some are definite matches (symptom onset dates match): 362218A 2022, 432732B
+# 2022, 
+# some are prolly? symptoms off by a few days?: 562624A 2023, 292223B 2023,
+# 551712A 2023, 551725A 2023, 551918A 2023, 551921B 2023, 551921C 2023,
+# 551712A 2023, 551725A 2023, 551918A 2023, 551921B 2023, 551921C 2023,
+# 553214B 2023, 551511A 2023, 551712A 2023
+# okay i'm just going to assume these are basically the same people...maybe some
+# that definitely aren't matches? those include: 362218A in 2022, 191126A 2023,
+# 311412A 2023, 251424A 2023
 ```
 
 
