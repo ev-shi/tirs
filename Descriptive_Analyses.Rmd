@@ -22,7 +22,8 @@ pacman::p_load(sf, # spatial
                lubridate,
                ncf, #correlation
                xtable, # export table1
-               fuzzyjoin # joining with some inexact
+               fuzzyjoin, # joining with some inexact
+               spdep # regression spatial
                )
 ```
 
@@ -348,11 +349,40 @@ season23 %>% filter(str_detect(as.character(ID_REGISTRO), fixed(target_id)))
 
 # All cases, most of TIRS (missing 82), and more than the number of cases
 # Natalie had for community/SINAVE
-denv23 <- sinave_block %>% 
-  filter(Year == 2023) #705 cases
-table(denv23$Source)
+test <- sinave_block[,-c(1:11)]
+denv23 <- cbind(sus, test)
+
+denv23 <- denv23 %>% #674 cases
+  filter((str_detect(Diagnosis, "DENV") | str_detect(Diagnosis, "DENGUE"))
+         & Year == 2023) # only dengue, only 2023
 
 # so....regression analysis now?
+```
+
+Regression?
+Uhhh do cases within a cluster tend to occur closer together? That is, 
+closer than expected under a null model of random placement inside that cluster
+```{r, warning=FALSE}
+# cluster-level spatial correlation?
+## info on cases within each cluster
+cluster_data <- denv23 %>% 
+  st_drop_geometry() %>% 
+  group_by(CLUSTER) %>% 
+  summarize(cases_per_cluster = n(),
+            mean_age = mean(as.numeric(Age), na.rm = TRUE))
+
+## obtain cluster shapefile info for each case
+clusters$CLUSTER <- as.numeric(clusters$CLUSTER)
+clusters <- clusters %>% 
+  left_join(cluster_data, by="CLUSTER")
+
+## k nearest neighbors -- are nearby clusters related? which i guess isn't exactly what i wanted...hm
+centroids <- st_coordinates(st_centroid(clusters))
+k_nearest <- knearneigh(centroids, k = 3)
+neighbors <- knn2nb(k_nearest)
+weights <- nb2listw(neighbors, style = "W")
+
+moran.test(clusters$cases_per_cluster, weights)
 ```
 
 
