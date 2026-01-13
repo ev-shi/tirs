@@ -24,691 +24,191 @@ pacman::p_load(sf, # spatial
                xtable, # export table1
                fuzzyjoin, # joining with some inexact
                spdep, # regression spatial
-               tmap # spatial maps
+               tmap, # spatial maps
+               sjlabelled # table 1 labels for sf
                )
 ```
 
-Read in shapefiles
+Read in data
 ```{r}
-## Read in case shapefile - TIRS_SINAVE_22_23
-sus <- st_read(dsn = here("data"), 
-                 layer = "TIRS_SINAVE_22_23")
-## Cluster shapefile
-clusters <- st_read(dsn = here("data"),
-                    layer = "Cluster final 2021 actualizado")
-```
+## Population of Mérida + Kanasín 
+yuc_pop <- read.csv("RESAGEBURB2020 - 31 Yucatán.csv")
+## Mérida + Kanasín shapefile from INEGI (eem - Block Polygons)
+yuc_m<- st_read(dsn = here("31_yucatan_2020/conjunto_de_datos"),
+                    layer = "31m")
+yuc_m <- yuc_m %>% 
+  filter(CVE_MUN == "041" | CVE_MUN == "050")
+## Mérida + Kanasín shapefile from INEGI (eea - Basic Urban Geostatistical Areas)
+merida_clean_sf <- st_read(dsn = here("31_yucatan_2020/conjunto_de_datos"),
+                    layer = "31a")
+merida_clean_sf <- merida_clean_sf %>% 
+  filter(CVE_MUN == "041" | CVE_MUN == "050")
 
-SINAVE raw data
-```{r}
-season21 <- here::here("data", "SINAVE_Data", 
-                       "datos_abiertos_dengue_301221.csv") %>%
-  rio::import() %>% 
-  dplyr::as_tibble()
-
-season22 <- here::here("data", "SINAVE_Data", 
-                       "datos_abiertos_dengue_011222.csv") %>%
-  rio::import() %>% 
-  dplyr::as_tibble()
-
+## SINAVE case data
 season23 <- here::here("data", "SINAVE_Data", 
                        "datos_abiertos_dengue_061223.csv") %>%
   rio::import() %>% 
   dplyr::as_tibble()
-```
 
-
-## Questions
-```{r}
-# are there suspected cases for both sources for both years?
-table(sus$Source, sus$Year)
-
-# diagnosis labels for each source
-sinave <- sus %>% filter(Source=="SINAVE")
-tirs <- sus %>% filter(Source=="TIRS")
-unique(sinave$Diagnosis)
-unique(tirs$Diagnosis)
-
-# only dengue?
-tirs_DENV <- tirs %>% filter(str_detect(Diagnosis, "DENV")) # 245 cases
-table(tirs_DENV$Year, tirs_DENV$Diagnosis)
-# what DENV diagnosis, for which years?
-```
-Ok now I have a dataset that has all the TIRS cases labeled by infection type 
-WHICH WAS HARDER THAN I THOUGHT IT'D BE
-```{r}
-# all dengue cases from the TIRS trial
-tirs_all_cases <- readRDS("all_cases_labeled.rds")
-tirs_all_denv <- tirs_all_cases %>% 
-  filter(denv_case == 1 | denv_zikv == 1 | denv_chikv == 1) # 327 (includes DENV coinfections)
-
-# all dengue cases given to me in the one file
-tirs_DENV # 245 
-
-#ok? are these all ? mostly? the same people?
-## i'll rbind select variables of each...
-sub_trial_data <- tirs_all_denv %>% # 327 cases
-  select(PPID, evnt_year, var6_symp_date, arm) %>% 
-  rename(id = PPID,
-         event_year = evnt_year,
-         symp_onset = var6_symp_date,
-         trial_arm = arm) %>% 
-  mutate(source = "Trial Data")
-sub_govt_data <- tirs_DENV %>% # 245 cases
-  st_drop_geometry() %>% 
-  select(ID, Year, Onset_symp, Arm_1TIRS) %>% 
-  rename(id = ID,
-         event_year = Year,
-         symp_onset = Onset_symp,
-         trial_arm = Arm_1TIRS) %>% 
-  mutate(source = "MoH Data")
-test_tirs_cases <- rbind(sub_trial_data, sub_govt_data)
-
-# ok how can i make sure to only grab the non-duplicates?
-tirs_all_denv %>% count(PPID) %>% #number of times an indv was infected w dengue
-  count(n) # there are four IDs that have two events, two that have three
-
-# which ones have multiple events
-sub_govt_data %>% count(id) %>% filter(n > 1) # not just first events
-tirs_all_denv %>% count(PPID) %>% 
-  filter(n > 1)
-
-# what about by year? # this works, all one year so group by that
-tirs_all_denv %>% count(PPID, evnt_year) %>% #number of times an indv was infected w dengue
-  count(n) 
-
-test_tirs_cases %>% arrange(id, event_year) #some duplicates...
-only_in_one <- anti_join(sub_trial_data, sub_govt_data, 
-                         by = c("id", "event_year"))
-# ok so all moh cases are included in the TIRS cases (so they're not extra ones
-# picked up by the MoH that weren't picked up by the clinical trial)
-# all extra cases are ones picked up by the trial
-# 82 extra cases
-
-tirs_all_denv %>% filter(PPID %in% only_in_one$id)
-# uhhh all these are different trial arms, different block types (central vs.
-# periphery)
-```
-
-Do I add all the extra cases?????? from TIRS??? to the list of total cases??
-oh god i should check if the SINAVE no. of cases match too
-```{r}
-# sinave has 551 obs....oh my god are some of them TIRS cases that were picked
-# up? are the TIRS cases the extra ones the MoH didn't catch???
+## Cases Shapefile
+sus <- st_read(dsn = here("data"), 
+                 layer = "TIRS_SINAVE_22_23")
+sus <- st_transform(sus, st_crs(yuc_m)) # make sure same st_crs
+## Cases by TIRS block
 sinave_block <- read_csv("data/TIRS_SINAVE_combined22_23_blockID.csv")
-# all moh data including block_id from gonzalo
-sub_sinave_block <- sinave_block %>% 
-  filter(Source == "SINAVE") %>% # 511 sinave cases...are 82 of them from TIRS..?
-  select(ID, Age, Year, Onset_symp, Arm_1TIRS, CLUSTER, MZTIRS) %>% 
-  rename(id = ID,
-         age = Age,
-         event_year = Year,
-         symp_onset = Onset_symp,
-         cluster_id = CLUSTER,
-         block_id = MZTIRS,
-         trial_arm = Arm_1TIRS) %>% 
-  mutate(source = "MoH Data")
-table(sub_sinave_block$trial_arm) # number of tirs/control cases...diff from dean
 
-# uhhh sinave cases that are from children? under 18? 220 of them...are they in tirs???
-young_sinave <- sub_sinave_block %>% 
-  filter(age <= 18)
-
-young_trial <- tirs_all_denv %>% # 327 cases
-  mutate(source = "Trial Data",
-         age = as.numeric(round((mdy(var6_symp_date) - mdy(rn2_pt_dob))/365))) %>%
-  select(PPID, evnt_year, var6_symp_date, arm, source, age, cluster, id_block) %>%
-  rename(id = PPID,
-         age = age,
-         event_year = evnt_year,
-         symp_onset = var6_symp_date,
-         cluster_id = cluster,
-         block_id = id_block,
-         trial_arm = arm,
-         source = source)
-
-#ok...do any of the sinave and tirs match by symptom onset date? age? cluster? block?
-young_sinave %>% arrange(cluster_id, block_id, event_year)
-young_trial %>% arrange(cluster_id, block_id, event_year)
-
-# if trial arm, event year, cluster_id match exactly
-# if age, block_id off by +-1?
-fuzzy_inner_join(young_sinave, young_trial,
-                 by = c("trial_arm", "event_year", "cluster_id", "age", 
-                        "block_id"),
-                 match_fun = list(`==`, `==`, `==`, 
-                                  function(x, y) abs(x - y) <= 1,
-                                  function(x, y) abs(x - y) <= 2)) %>% 
-  relocate(c(id.x, id.y, symp_onset.x, symp_onset.y,
-             cluster_id.x, cluster_id.y, block_id.x, block_id.y, age.x, age.y, 
-             event_year.x, event_year.y, trial_arm.x, trial_arm.y), 
-           .before = id.x) %>% 
-  # same age and block
-  filter((block_id.x == block_id.y) & (age.x == age.y))
-  # # only show those that have a different age or different block or both? 
-  # # oh did i write it wrong earlier
-  # filter(((block_id.x != block_id.y) & (age.x == age.y)) | 
-  #          ((block_id.x == block_id.y) & (age.x != age.y)) |
-  #          ((block_id.x != block_id.y) & (age.x != age.y)))
-
-# could be same person? f it i'm looking for exact symptom dates:
-# 341547A/31041AAKP070214, 162511B/31050LOCS101218
-# gah there are definitely some duplicates maybe they've already matched the 
-# TIRS/moh ones???
+## TIRS Clusters Shapefile
+clusters_sf <- st_read(dsn = here("data"),
+                    layer = "Cluster final 2021 actualizado")
+clusters_sf <- st_transform(clusters_sf, st_crs(yuc_m)) # make sure same st_crs
 ```
 
-Why more sinave cases than what was reported in the paper??
-- exclude all children????
+## Some Cleaning
+Putting all information into the shapefiles
 ```{r}
-old_sinave <- sub_sinave_block %>% 
-  filter(age > 18)
-table(old_sinave$trial_arm)
-
-# dean: control, 202 cases • TIRS, 150 cases (of all ABD! not just dengue)
-# well, actually no? didn't the paper say sinave was really all just dengue? so
-# the numbers should be the same
-
-# the cases that for some reason weren't in the sinave TIRS (all others covered)
-only_in_one$id  #82 of these 
-oio_tirs <- tirs_all_denv[(tirs_all_denv$PPID %in% only_in_one$id),] #86 here, so some had two events
-# and the second one wasn't picked up by sinave?? orrrr it's not listed as from TIRS...
-# what are the extras??
-
-anti_join(oio_tirs, only_in_one, by=c("PPID" = "id", "evnt_year" = "event_year"))
-# so sinave didn't pick up on earlier (2021) events from 222111B and 232830A
-
-# ok now this is all 82 events that were caught by TIRS but not by SINAVE
-oio_tirs <- oio_tirs %>% filter(!((PPID == "222111B" | PPID == "232830A") & 
-                                   (evnt_year == "2022" | evnt_year == "2023")))
-
-# out of the 82 cases in "only in one" do any of them match with source = sinave?
-young_oio <- oio_tirs %>% # 82 not found in source = tirs
-  mutate(source = "Trial Data",
-         age = as.numeric(round((mdy(var6_symp_date) - mdy(rn2_pt_dob))/365))) %>%
-  select(PPID, evnt_year, var6_symp_date, arm, source, age, cluster, id_block) %>%
-  rename(id = PPID,
-         age = age,
-         event_year = evnt_year,
-         symp_onset = var6_symp_date,
-         cluster_id = cluster,
-         block_id = id_block,
-         trial_arm = arm,
-         source = source)
-# these are all the extra cases from tirs, now to match them with sinave
-
-fuzzy_inner_join(young_sinave, young_oio,
-                 by = c("trial_arm", "event_year", "cluster_id", "age", 
-                        "block_id"),
-                 match_fun = list(`==`, `==`, `==`, 
-                                  function(x, y) abs(x - y) <= 1,
-                                  function(x, y) abs(x - y) <= 2)) %>% 
-  relocate(c(id.x, id.y, symp_onset.x, symp_onset.y,
-             cluster_id.x, cluster_id.y, block_id.x, block_id.y, age.x, age.y, 
-             event_year.x, event_year.y, trial_arm.x, trial_arm.y), 
-           .before = id.x) 
-
-# possible matches...: well it's certainly not 82! or should i do left join?
-# 31050MEEA100328	551921C, 31050ZACC120106	151722A, 31050PEGR110706	152828A,
-
-fuzzy_left_join(young_oio, young_sinave,
-                 by = c("trial_arm", "event_year", "cluster_id", "age", 
-                        "block_id"),
-                 match_fun = list(`==`, `==`, `==`, 
-                                  function(x, y) abs(x - y) <= 1,
-                                  function(x, y) abs(x - y) <= 2)) %>% 
-  relocate(c(id.x, id.y, symp_onset.x, symp_onset.y,
-             cluster_id.x, cluster_id.y, block_id.x, block_id.y, age.x, age.y, 
-             event_year.x, event_year.y, trial_arm.x, trial_arm.y), 
-           .before = id.x) 
-
-# most likely to be matches?: 151722A	31050ZACC120106, 152828A	31050PEGR110706
-# 551921C	31050MEEA100328
-
-# so no, the extra tirs cases don't really match up with sinave data...so do i
-# add the tirs cases...??????
-```
-
-And why do we have so many community cases
-```{r}
-# some extra tirs cases...and many more community cases than were given in the
-# paper
-
-#...sinave isn't double counting TIRS, is it??
-# sub_sinave_block <- sinave_block %>% 
-#   filter(Source == "SINAVE") %>% # 511 sinave cases...are 82 of them from TIRS..?
-#   select(ID, Age, Year, Onset_symp, Arm_1TIRS, CLUSTER, MZTIRS) %>% 
-#   rename(id = ID,
-#          age = Age,
-#          event_year = Year,
-#          symp_onset = Onset_symp,
-#          cluster_id = CLUSTER,
-#          block_id = MZTIRS,
-#          trial_arm = Arm_1TIRS) %>% 
-#   mutate(source = "MoH Data")
-sub_tirss_block <- sinave_block %>% 
-  filter(Source == "TIRS") %>% # 511 sinave cases...are 82 of them from TIRS..?
-  select(ID, Age, Year, Onset_symp, Arm_1TIRS, CLUSTER, MZTIRS) %>% 
-  rename(id = ID,
-         age = Age,
-         event_year = Year,
-         symp_onset = Onset_symp,
-         cluster_id = CLUSTER,
-         block_id = MZTIRS,
-         trial_arm = Arm_1TIRS) %>% 
-  mutate(source = "MoH Data")
-
-# just to see if there are any overlaps between TIRS cases and sinave cases??
-fuzzy_left_join(sub_sinave_block, sub_tirss_block,
-                 by = c("trial_arm", "event_year", "cluster_id", "age", 
-                        "block_id"),
-                 match_fun = list(`==`, `==`, `==`, 
-                                  function(x, y) abs(x - y) <= 1,
-                                  function(x, y) abs(x - y) <= 2)) %>% 
-  relocate(c(id.x, id.y, symp_onset.x, symp_onset.y,
-             cluster_id.x, cluster_id.y, block_id.x, block_id.y, age.x, age.y, 
-             event_year.x, event_year.y, trial_arm.x, trial_arm.y), 
-           .before = id.x) 
-
-# seems to def be double counted??? ugh but maybe that's just a coincidence
-# 31050CUBS091026	432732B, 31050LOCS101218	162511B, 
-```
-
-```{r}
-fuzzy_left_join(young_oio, young_sinave,
-                 by = c("trial_arm", "event_year", "cluster_id", "age", 
-                        "block_id"),
-                 match_fun = list(`==`, `==`, `==`, 
-                                  function(x, y) abs(x - y) <= 1,
-                                  function(x, y) abs(x - y) <= 2)) %>% 
-  relocate(c(id.x, id.y, symp_onset.x, symp_onset.y,
-             cluster_id.x, cluster_id.y, block_id.x, block_id.y, age.x, age.y, 
-             event_year.x, event_year.y, trial_arm.x, trial_arm.y), 
-           .before = id.x) 
-```
-
-
-```{r}
-only_in_one %>% filter(id == "222111B")
-```
-
-
-
-```{r}
-young_trial %>% filter(id == "331429A")
-young_sinave %>% filter(id == "31050CACM090304")
-
-n <- 2
-target_id <- "050201"
-
-season23 %>% filter(str_detect(as.character(ID_REGISTRO), fixed(target_id)))
-```
-
-### Dengue 2023 Outbreak
-```{r}
-# well, it's not like i can use too much from the extra 82 tirs cases since
-# i don't have their location information
-# so
-
-# All cases, most of TIRS (missing 82), and more than the number of cases
-# Natalie had for community/SINAVE
-test <- sinave_block[,-c(1:11)]
-denv23 <- cbind(sus, test)
-
-denv23 <- denv23 %>% #674 cases
-  filter((str_detect(Diagnosis, "DENV") | str_detect(Diagnosis, "DENGUE"))
-         & Year == 2023) # only dengue, only 2023
-
-# so....regression analysis now?
-```
-
-Regression?
-Uhhh do cases within a cluster tend to occur closer together? That is, 
-closer than expected under a null model of random placement inside that cluster
-```{r}
-# , warning=FALSE
-yuc_pop <- read.csv("RESAGEBURB2020 - 31 Yucatán.csv")
-
-# combine population size for each CVEGEO with the shapefile...all the CVEGEOs
-# within the cluster...
-yuc_cluster_pops <- yuc_pop %>% 
+# MOH data:
+## add CVEGEO to population dataset
+yuc_pop_cvegeo <- yuc_pop %>% 
   mutate(CVE_ENT = as.character(ENTIDAD),
          CVE_MUN = paste0("0", MUN),
          CVE_LOC = paste0("000", LOC),
          CVE_AGEB = AGEB,
-         CVE_MZA = ifelse(nchar(as.character(yuc_pop$MZA)) == 3, as.character(MZA),
-                          ifelse(nchar(as.character(yuc_pop$MZA)) == 2, paste0("0", MZA),
-                                 paste0("00", MZA))),
+         CVE_MZA = ifelse(nchar(as.character(yuc_pop$MZA)) == 3, 
+                          as.character(MZA),
+                          ifelse(nchar(as.character(yuc_pop$MZA)) == 2, 
+                                 paste0("0", MZA), paste0("00", MZA))),
          CVEGEO = paste0(CVE_ENT, CVE_MUN, CVE_LOC, CVE_AGEB, CVE_MZA))
-yuc_cluster_pops <- yuc_cluster_pops[-c(1:3),]
-# population of those in the clusters...matching by CVEGEO this better be correct
-trial_cluster_pops <- clusters %>% 
-  left_join(yuc_cluster_pops, by = c("CVEGEO","CVE_ENT", "CVE_MUN", "CVE_LOC", 
-                                     "CVE_AGEB", "CVE_MZA"))
+yuc_pop_cvegeo <- yuc_pop_cvegeo[-c(1:3),]
 
-# cases by tirs cluster...
-cases_by_blockid <- denv23 %>% 
-  st_drop_geometry() %>% 
-  group_by(CLUSTER, MZTIRS) %>% 
-  summarize(cases = n())
-# population per tirs block/cluster 
-pop_per_blockid <- trial_cluster_pops %>% # some with total pop = 0? from the 2020 census record?
-  group_by(CLUSTER, MZTIRS) %>% 
-  summarize(pop = sum(POBTOT))
-
-# trial_cluster_pops %>% 
-#   st_drop_geometry() %>% 
-#   arrange(CLUSTER, MZTIRS) %>% 
-#   filter(CLUSTER == 63 & MZTIRS == 28)
-
-case_rate <- pop_per_blockid %>% # rates of DENV cases per TIRS block in 2023
-  mutate(CLUSTER = as.numeric(CLUSTER)) %>% 
-  full_join(cases_by_blockid, by = c("CLUSTER", "MZTIRS")) %>% 
-  mutate(cases = ifelse(is.na(cases), 0, cases),
-         rate = ifelse(pop == 0, 0, cases/pop),
-         rate_pcnt = rate * 100)
-# per cluster
-pop_per_cluster <- pop_per_blockid %>%
-  group_by(CLUSTER) %>% 
-  summarize(cluster_pop = sum(pop, na.rm = TRUE))
-cases_by_cluster <- cases_by_blockid %>% 
-  group_by(CLUSTER) %>% 
-  summarize(cases_cluster = sum(cases, na.rm = TRUE))
-case_rate_cluster <- pop_per_cluster %>% 
-  mutate(CLUSTER = as.numeric(CLUSTER)) %>% 
-  left_join(cases_by_cluster, by = "CLUSTER") %>% 
-  mutate(rate = ifelse(cluster_pop == 0, 
-                       paste0("No recorded population for this cluster"), 
-                       cases_cluster/cluster_pop),
-         rate_pcnt = ifelse(rate == "No recorded population for this cluster", 
-                            NA, as.numeric(rate)*100))
-
-```
-
-...map...case rates by block...?
-```{r}
-tm_shape(case_rate) +
-  tm_polygons("rate_pcnt", style = "quantile")
-# lol not really helpful <3
-```
-case rates by cluster?
-```{r}
-tm_shape(case_rate_cluster) +
-  tm_polygons("rate_pcnt", style = "quantile")
-# at least a little more helpful
-```
-```{r}
-ggplot() +
-  geom_sf(data = yuc_a, linewidth = 0.05)
-
-# ok but do i want the population of people within that region?
-yuc_hotspots <- yuc_a %>% 
-  filter(CVE_MUN == "041" | CVE_MUN == "050")
-
-ggplot() +
-  geom_sf(data = yuc_hotspots, linewidth = 0.05) +
-  geom_sf(data = clusters)
-ggsave("clusters_on_yuca.pdf")
-
-# other yuc shapefiles???
-# eee -- ejes de vailidad, road axes
-yuc_e <- st_read(dsn = here("31_yucatan_2020/conjunto_de_datos"),
-                    layer = "31e")
-yuc_e <- yuc_e %>% 
-  filter(CVE_MUN == "041" | CVE_MUN == "050")
-ggplot() +
-  geom_sf(data = yuc_e, linewidth = 0.05) +
-  geom_sf(data = clusters)
-ggsave("clusters_on_yuc_e.pdf")
-
-# eeent - State Geostatistical Areas (no)
-# eemun - Municipal Geostatistical Areas (no)
-# eear - Basic Rural Geostatistical Areas (no)
-# eel - Polygon of Urban and Rural Blocked Localities (no)
-# eelpr - Rural Point Localities (probably not)
-# eeti - Island Territory (probably not)
-# eea - Basic Urban Geostatistical Areas (yeah kinda)
-# eem - Block Polygons (yes oh my god) ///smaller blocks, what are the bigger ones?
-# eefm - Block Fronts (ah ok also yes..)
-# eee - Road Axes (yeah kinda?)
-# eecd - Dispersed Hamlet
-# esia - Area-type Complementary Services and Information
-# (green areas, medians, traffic circles)
-# eesil - Line-type Complementary Services and Information
-# (rivers, railroads, roads, trails, paths)
-# eesip -
-# Point-type Complementary Services and Information
-# (municipal buildings or administrative offices, parks or gardens)
-# eepe - External Polygon (no)
-# eepem - External Block Polygon (probably not)
-yuc_m_big <- st_read(dsn = here("31_yucatan_2020/conjunto_de_datos"),
-                    layer = "31m")
-yuc_fm <- yuc_fm %>% 
-  filter(CVE_MUN == "041" | CVE_MUN == "050")
-ggplot() +
-  geom_sf(data = yuc_hotspots, linewidth = 0.05) +
- # geom_sf(data = yuc_fm, linewidth = 0.005, color = "red") +
-  geom_sf(data = clusters, linewidth = 0.005, color = "blue")
-ggsave("clusters_on_yuc_a_clusters.pdf")
-# ok natalie's paper is yuc_a and yes the clusters
-```
-
-Uhh ok adding the rest of the city cases to the shapefiles...?
-```{r}
-s23_counts <- season23 %>% 
-  group_by(ENTIDAD_RES, MUNICIPIO_RES) %>% 
-  summarize(cases = n())
-
-yuc_m_by_entmun <- yuc_m %>% 
-  group_by(CVE_ENT, CVE_MUN) %>% 
-  summarize(geometry = st_union(geometry),
-            .groups = "drop")
-
-merida_cases <- yuc_m_by_entmun %>% 
-  mutate(ENTIDAD_RES = as.numeric(CVE_ENT),
-         MUNICIPIO_RES = as.numeric(CVE_MUN)) %>% 
-  left_join(s23_counts, by = c("ENTIDAD_RES", "MUNICIPIO_RES"))
-
-ggplot() +
-  geom_sf(data = merida_cases, linewidth = 0.05) +
-  # geom_sf(data = cases, size = 0.75, stroke = 0,
-  #         aes(color = as.factor(Source))) +
-  # scale_fill_manual(values = c("ivory4", "dodgerblue4"), 
-  #                   name = "TIRS", labels = c("No", "Yes")) + 
-  # guides(color = guide_legend(override.aes = list(size = 3))) +
-  # scale_color_manual(values = c("cadetblue3", "coral2"), 
-  #                   name = "Source", labels = c("TIRS", "SINAVE")) +
-  theme_minimal()
-
-
-season23 %>% group_by(ENTIDAD_RES, MUNICIPIO_RES) %>% 
-  summarize(cases = n()) %>% 
-  arrange(desc(cases))
-```
-
-Ok i think that earlier population count was incorrect -- try again by just overlapping the areas
-```{r}
-# population for all areas of the city
-yuc_m_pop <- yuc_m %>% 
-  right_join(yuc_cluster_pops, by = c("CVEGEO", "CVE_ENT", "CVE_MUN",
+## population for all areas of the city (add population numbers to shapefile)
+merida_sf <- yuc_m %>% 
+  right_join(yuc_pop_cvegeo, by = c("CVEGEO", "CVE_ENT", "CVE_MUN",
                                      "CVE_LOC", "CVE_AGEB", "CVE_MZA"))
 
-# now overlap these populations counts with the shapefiles for the clusters
-clusters <- st_transform(clusters, st_crs(yuc_m_pop))
-intersections <- st_intersection(yuc_m_pop, clusters)
-
-# great NOW i can go by TIRS cluster and block to see what the population of each is
-pop_cluster <- intersections %>% 
-  group_by(CLUSTER, MZTIRS) %>% 
-  summarize(Block_Population = sum(POBTOT))
-pop_block <- intersections %>% 
-  group_by(CLUSTER) %>% 
-  summarize(Block_Population = sum(POBTOT))
-
-ggplot() +
-  geom_sf(data = intersections, linewidth = 0.05) +
- # geom_sf(data = yuc_fm, linewidth = 0.005, color = "red") +
-  geom_sf(data = clusters, linewidth = 0.005, color = "blue")
-ggsave("clusters_pop.pdf")
+# TIRS data -- all cases
+cases_sf <- cbind(sus, sinave_block[,c("CVEGEO", "CVE_MZA", "CLUSTER", "MZA3X3",
+                                       "MZTIRS", "TIRS")])
 ```
 
-
-Comparing proportion of cases within the study area vs the rest of the city?
+Only confirmed Dengue 2023 cases
 ```{r}
-# city as a whole
-# number of cases in MERIDA (aka mun = 050 or 041)
-merida_cases23 <- season23 %>% 
-  filter(ENTIDAD_RES == 31 & (MUNICIPIO_RES == 50 | MUNICIPIO_RES == 41))
-# all cases in merida caught by moh / total population of merida
-nrow(merida_cases23) / sum(yuc_m_pop$POBTOT)
-
-# trial area
-# num cases in trial / total population of trial area
-nrow(denv23) / sum(intersections$POBTOT)
-```
-
-
-## Some Cleaning
-Only actual cases
-```{r}
-cases <- sus %>% 
-  filter(Diagnosis != "Negativo") %>% 
-  filter(Comentario != "Negativo" | is.na(Comentario))
-
-unique(cases$Diagnosis) # only actual diagnoses
-#unique(cases$Comentario) # there was one that had Negativo as a comment rather than under diagnosis
-```
-
-SINAVE Data
-```{r}
-s21 <- season21 %>% 
-  # only want data for Merida (050 MUNICIPO_RES and 31 ENTIDAD_RES)
-  filter(MUNICIPIO_RES == 50 & ENTIDAD_RES == 31) %>% 
-  # change symptom onset date to match cases dataset (i.e., weeks since 
-  #  start of ABD season)
-  mutate(Week_onset = ymd(FECHA_SIGN_SINTOMAS),
-         Week_onset = epiweek(Week_onset), #epiweek????
-         Year = year(FECHA_SIGN_SINTOMAS)) %>% 
-  relocate(c(FECHA_SIGN_SINTOMAS, Week_onset), .before = ID_REGISTRO)
-
-s22 <- season22 %>% 
-  # only want data for Merida (050 MUNICIPO_RES and 31 ENTIDAD_RES)
-  filter(MUNICIPIO_RES == 50 & ENTIDAD_RES == 31) %>% 
-  # change symptom onset date to match cases dataset (i.e., weeks since 
-  #  start of ABD season)
-  mutate(Week_onset = ymd(FECHA_SIGN_SINTOMAS),
-         Week_onset = epiweek(Week_onset), #epiweek????
-         Year = year(FECHA_SIGN_SINTOMAS)) %>%
-  relocate(c(FECHA_SIGN_SINTOMAS, Week_onset), .before = ID_REGISTRO)
-
+# select cases of all the CONFIRMED 2023 dengue cases
 s23 <- season23 %>% 
-  # only want data for Merida (050 MUNICIPO_RES and 31 ENTIDAD_RES)
-  filter(MUNICIPIO_RES == 50 & ENTIDAD_RES == 31) %>% 
+  # only want data for Mérida + Kanasín (050, 041 MUNICIPO_RES)
+  filter(MUNICIPIO_RES == 50 | MUNICIPIO_RES == 41) %>% 
   # change symptom onset date to match cases dataset (i.e., weeks since 
   #  start of ABD season)
   mutate(Week_onset = ymd(FECHA_SIGN_SINTOMAS),
-         Week_onset = epiweek(Week_onset), #epiweek????
+         Week_onset = epiweek(Week_onset),
          Year = year(FECHA_SIGN_SINTOMAS)) %>%
-  relocate(c(FECHA_SIGN_SINTOMAS, Week_onset), .before = ID_REGISTRO)
+  relocate(c(FECHA_SIGN_SINTOMAS, Week_onset), .before = ID_REGISTRO) %>% 
+  filter(ESTATUS_CASO == 2) # 1 likely; 2 confirmed; 3 discarded
+
+# from TIRS trial locations, only DENV cases from 2023
+denv23 <- cases_sf %>% #674 cases
+  filter((str_detect(Diagnosis, "DENV") | str_detect(Diagnosis, "DENGUE"))
+         & Year == 2023) # only dengue, only 2023
 ```
 
 # Map
-By source
+By Intervention, all cases
 ```{r}
 ggplot() +
-  geom_sf(data = clusters, linewidth = 0.05, aes(fill = as.factor(TIRS)),
+  geom_sf(data = merida_clean_sf, linewidth = 0.05) +
+  geom_sf(data = clusters_sf, linewidth = 0.05, aes(fill = as.factor(TIRS)),
           alpha = 0.85) +
-  geom_sf(data = cases, size = 0.75, stroke = 0,
-          aes(color = as.factor(Source))) +
-  scale_fill_manual(values = c("ivory4", "dodgerblue4"), 
-                    name = "TIRS", labels = c("No", "Yes")) + 
-  guides(color = guide_legend(override.aes = list(size = 3))) +
-  scale_color_manual(values = c("cadetblue3", "coral2"), 
-                    name = "Source", labels = c("TIRS", "SINAVE")) +
+  geom_sf(data = cases_sf, size = 0.25, stroke = 0) +
+  scale_fill_manual(values = c("tomato", "darkolivegreen3"), 
+                    name = "TIRS Trial Arm", labels = c("Control", 
+                                                        "Intervention")) +
   theme_minimal()
-ggsave("cases_source.pdf")
+ggsave("merida_cases_clusters.pdf")
 ```
+
+By intervention, only Dengue 2023
 
 # Table 1
 Formatting
 ```{r}
-cases$Arm_1TIRS <- 
-  factor(cases$Arm_1TIRS, levels = c(0, 1),
+test <- denv23
+test$Arm_1TIRS <- 
+  factor(test$Arm_1TIRS, levels = c(0, 1),
          labels = c("Control",
                     "TIRS Intervention"))
-cases$Year <- factor(cases$Year)
-cases$Age <- as.numeric(cases$Age)
+test$Age <- as.numeric(test$Age)
 
-label(cases$Age) <- "Age"
-label(cases$Arm_1TIRS) <- "Trial Arm"
-label(cases$Year) <- "Year*"
-label(cases$Week_onset) <- "Week of Symptom Onset <sup>†</sup>"
+test$Age <- set_label(test$Age, "Age")
+test$Arm_1TIRS <- set_label(test$Arm_1TIRS, "Trial Arm")
+test$Week_onset <- set_label(test$Week_onset, "Week of Symptom Onset*")
 
-footnote <- "*In 2023, there was a large outbreak of DENV-3 <br> <sup>†</sup> Week of the year"
+footnote <- "*Week of the year"
 ```
 
 Make Table
 ```{r}
-case_tab <- table1(~ Age + Year + Arm_1TIRS + Week_onset | Source, data = cases,
+case_tab <- table1(~ Age + Arm_1TIRS + Week_onset | Source, data = test,
        footnote=footnote)
 case_tab <- as.data.frame(case_tab)
 print(xtable(case_tab, type = "latex"), file = "case_tab.tex")
 ```
 
-# Case Data over Time
-Combine all SINAVE data? all data in general? 
+# Cases over time
+Cases counts from all of Mérida and the TRIAL
 ```{r}
-sinave <- do.call("rbind", list(s21, s22, s23))
-
-table(sinave$ESTATUS_CASO) # 1 likely; 2 confirmed; 3 discarded
-
-# we want only confirmed cases? (ESTATUS_CASO == 2)
-sinave_cases <- sinave %>% 
-  filter(ESTATUS_CASO == 2)
-```
-
-and get case counts
-```{r}
-sinave_case_num <- sinave_cases %>% 
-  count(Year, Week_onset) %>% 
-  mutate(Year = as.character(Year))
-trial_case_num <- cases %>% 
-  count(Year, Week_onset) %>% 
-  st_drop_geometry() %>% 
-  mutate(Year = as.character(Year)) %>% 
-  add_row(Year = "2021", Week_onset = 1, n = 0)
+s23_case_counts <- s23 %>% 
+  count(Week_onset)
+trial_case_counts <- cases_sf %>% 
+  filter(Source == "TIRS") %>% 
+  count(Week_onset) %>% 
+  st_drop_geometry()
 ```
 
 With same y axis
 ```{r}
 ggplot() +
-  geom_col(data = sinave_case_num,
+  geom_col(data = s23_case_counts,
            aes(x = Week_onset, y = n, fill = "SINAVE"),
            alpha = 0.6) + 
-  geom_col(data = trial_case_num,
+  geom_col(data = trial_case_counts,
            aes(x = Week_onset, y = n, fill = "TIRS")) +
-  facet_wrap(~ Year, ncol = 1) +
   scale_fill_manual(values = c("TIRS" = "steelblue",
                                "SINAVE" = "firebrick")) +
   labs(x = "Week of Symptom Onset",
        y = "Number of Cases",
        fill = "Source",
-       title = "ABD Cases by Week (TIRS vs. SINAVE)") +
+       title = "Dengue Cases by Week in 2023 (TIRS vs. SINAVE)") +
   scale_x_continuous(
     breaks = seq(1, 53, by = 2)
   ) +
   theme_classic()
-ggsave("cases_by_week.pdf")
+ggsave("cases_by_week_denv23.pdf")
 ```
 
-# Spatial?
-Correlogram
-want to look at correlation between case location and....cluster?????? uh oh
-or cluster and number of cases?? does that even make sense
+# Case  proportions
 ```{r}
-case_coords <- st_coordinates(cases)
-cluster_coords <- st_coordinates(clusters)
+# make shapefile for the clusters + include population counts
+clusters_sf <- st_intersection(merida_sf, clusters_sf)
 
-# does this work????
-corr <- correlog()
+# Populations of each cluster + block
+pop_cluster <- clusters_sf %>% 
+  group_by(CLUSTER, MZTIRS) %>% 
+  summarize(Block_Population = sum(POBTOT))
+pop_block <- clusters_sf %>% 
+  group_by(CLUSTER) %>% 
+  summarize(Block_Population = sum(POBTOT))
 ```
+
+Comparing proportion of cases within the study area vs the rest of the city?
+```{r}
+# All confirmed cases in Mérida caught by MOH / total population of Mérida
+nrow(s23) / sum(merida_sf$POBTOT)
+
+# trial area
+# num cases in trial / total population of trial area
+nrow(denv23) / sum(clusters_sf$POBTOT)
+```
+
+
+
 
 
