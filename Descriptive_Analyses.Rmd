@@ -23,7 +23,8 @@ pacman::p_load(sf, # spatial
                ncf, #correlation
                xtable, # export table1
                fuzzyjoin, # joining with some inexact
-               spdep # regression spatial
+               spdep, # regression spatial
+               tmap # spatial maps
                )
 ```
 
@@ -364,18 +365,6 @@ Uhhh do cases within a cluster tend to occur closer together? That is,
 closer than expected under a null model of random placement inside that cluster
 ```{r}
 # , warning=FALSE
-
-# since the outcome is cases can i do a regression here????? OR am i using
-# census tract data ohhh my god oops
-
-# oh god sorry matt i CANNOT figure out how to use worldpop :(((
-# yuc_blocks <- st_read("31_yucatan_2020/conjunto_de_datos/31m.shp")
-# yuc_mun <- st_read("31_yucatan_2020/conjunto_de_datos/31mun.shp")
-# yuc_sip <- st_read("31_yucatan_2020/conjunto_de_datos/31sip.shp")
-# yuc_sil <- st_read("31_yucatan_2020/conjunto_de_datos/31sil.shp")
-yuc_a <- st_read("31_yucatan_2020/conjunto_de_datos/31a.shp")
-yuc_cd <- st_read("31_yucatan_2020/conjunto_de_datos/31cd.shp")
-
 yuc_pop <- read.csv("RESAGEBURB2020 - 31 Yucatán.csv")
 
 # combine population size for each CVEGEO with the shapefile...all the CVEGEOs
@@ -390,31 +379,144 @@ yuc_cluster_pops <- yuc_pop %>%
                                  paste0("00", MZA))),
          CVEGEO = paste0(CVE_ENT, CVE_MUN, CVE_LOC, CVE_AGEB, CVE_MZA))
 yuc_cluster_pops <- yuc_cluster_pops[-c(1:3),]
-yuc_cluster_pops <- yuc_a %>% 
-  right_join(yuc_cluster_pops, by = c("CVE_ENT", "CVE_MUN", "CVE_LOC", "CVE_AGEB"))
-# so this is all clusters within the area we're looking at, now all clusters in the trial:
-
-trial_cluster_pops <- yuc_cluster_pops %>% 
-  filter(CVEGEO.y %in% clusters$CVEGEO)
-# well, these shapes are different :') so. ok. join to clusters?
-
+# population of those in the clusters...matching by CVEGEO this better be correct
 trial_cluster_pops <- clusters %>% 
   left_join(yuc_cluster_pops, by = c("CVEGEO","CVE_ENT", "CVE_MUN", "CVE_LOC", 
                                      "CVE_AGEB", "CVE_MZA"))
 
+# cases by tirs cluster...
+cases_by_blockid <- denv23 %>% 
+  st_drop_geometry() %>% 
+  group_by(CLUSTER, MZTIRS) %>% 
+  summarize(cases = n())
+# population per tirs block/cluster 
+pop_per_blockid <- trial_cluster_pops %>% # some with total pop = 0? from the 2020 census record?
+  group_by(CLUSTER, MZTIRS) %>% 
+  summarize(pop = sum(POBTOT))
+
+# trial_cluster_pops %>% 
+#   st_drop_geometry() %>% 
+#   arrange(CLUSTER, MZTIRS) %>% 
+#   filter(CLUSTER == 63 & MZTIRS == 28)
+
+case_rate <- pop_per_blockid %>% # rates of DENV cases per TIRS block in 2023
+  mutate(CLUSTER = as.numeric(CLUSTER)) %>% 
+  full_join(cases_by_blockid, by = c("CLUSTER", "MZTIRS")) %>% 
+  mutate(cases = ifelse(is.na(cases), 0, cases),
+         rate = ifelse(pop == 0, 0, cases/pop),
+         rate_pcnt = rate * 100)
+# per cluster
+pop_per_cluster <- pop_per_blockid %>%
+  group_by(CLUSTER) %>% 
+  summarize(cluster_pop = sum(pop, na.rm = TRUE))
+cases_by_cluster <- cases_by_blockid %>% 
+  group_by(CLUSTER) %>% 
+  summarize(cases_cluster = sum(cases, na.rm = TRUE))
+case_rate_cluster <- pop_per_cluster %>% 
+  mutate(CLUSTER = as.numeric(CLUSTER)) %>% 
+  left_join(cases_by_cluster, by = "CLUSTER") %>% 
+  mutate(rate = ifelse(cluster_pop == 0, 
+                       paste0("No recorded population for this cluster"), 
+                       cases_cluster/cluster_pop),
+         rate_pcnt = ifelse(rate == "No recorded population for this cluster", 
+                            NA, as.numeric(rate)*100))
+
 ```
-take a look at the shapefiles?
+
+...map...case rates by block...?
+```{r}
+tm_shape(case_rate) +
+  tm_polygons("rate_pcnt", style = "quantile")
+# lol not really helpful <3
+```
+case rates by cluster?
+```{r}
+tm_shape(case_rate_cluster) +
+  tm_polygons("rate_pcnt", style = "quantile")
+# at least a little more helpful
+```
 ```{r}
 ggplot() +
-  geom_sf(data = trial_cluster_pops, linewidth=0.05) +
-  theme_minimal()
-ggsave("state_boundary.pdf")
-```
-```{r}
+  geom_sf(data = yuc_a, linewidth = 0.05)
+
+# ok but do i want the population of people within that region?
+yuc_hotspots <- yuc_a %>% 
+  filter(CVE_MUN == "041" | CVE_MUN == "050")
+
 ggplot() +
-  geom_sf(data = clusters, linewidth=0.05) +
-  theme_minimal()
+  geom_sf(data = yuc_hotspots, linewidth = 0.05) +
+  geom_sf(data = clusters)
+ggsave("clusters_on_yuca.pdf")
+
+# other yuc shapefiles???
+# eee -- ejes de vailidad, road axes
+yuc_e <- st_read(dsn = here("31_yucatan_2020/conjunto_de_datos"),
+                    layer = "31e")
+yuc_e <- yuc_e %>% 
+  filter(CVE_MUN == "041" | CVE_MUN == "050")
+ggplot() +
+  geom_sf(data = yuc_e, linewidth = 0.05) +
+  geom_sf(data = clusters)
+ggsave("clusters_on_yuc_e.pdf")
+
+# eeent - State Geostatistical Areas (no)
+# eemun - Municipal Geostatistical Areas (no)
+# eear - Basic Rural Geostatistical Areas (no)
+# eel - Polygon of Urban and Rural Blocked Localities (no)
+# eelpr - Rural Point Localities (probably not)
+# eeti - Island Territory (probably not)
+# eea - Basic Urban Geostatistical Areas (yeah kinda)
+# eem - Block Polygons (yes oh my god) ///smaller blocks, what are the bigger ones?
+# eefm - Block Fronts (ah ok also yes..)
+# eee - Road Axes (yeah kinda?)
+# eecd - Dispersed Hamlet
+# esia - Area-type Complementary Services and Information
+# (green areas, medians, traffic circles)
+# eesil - Line-type Complementary Services and Information
+# (rivers, railroads, roads, trails, paths)
+# eesip -
+# Point-type Complementary Services and Information
+# (municipal buildings or administrative offices, parks or gardens)
+# eepe - External Polygon (no)
+# eepem - External Block Polygon (probably not)
+yuc_fm <- st_read(dsn = here("31_yucatan_2020/conjunto_de_datos"),
+                    layer = "31fm")
+yuc_fm <- yuc_fm %>% 
+  filter(CVE_MUN == "041" | CVE_MUN == "050")
+ggplot() +
+  geom_sf(data = yuc_hotspots, linewidth = 0.05) +
+ # geom_sf(data = yuc_fm, linewidth = 0.005, color = "red") +
+  geom_sf(data = clusters, linewidth = 0.005, color = "blue")
+ggsave("clusters_on_yuc_a_clusters.pdf")
+# ok natalie's paper is yuc_a and yes the clusters
 ```
+
+Uhh ok adding the rest of the city cases to the shapefiles...?
+```{r}
+s23_counts <- season23 %>% 
+  group_by(ENTIDAD_RES, MUNICIPIO_RES) %>% 
+  summarize(cases = n())
+
+yuc_m_by_entmun <- yuc_m %>% 
+  group_by(CVE_ENT, CVE_MUN) %>% 
+  summarize(geometry = st_union(geometry),
+            .groups = "drop")
+
+merida_cases <- yuc_m_by_entmun %>% 
+  mutate(ENTIDAD_RES = as.numeric(CVE_ENT),
+         MUNICIPIO_RES = as.numeric(CVE_MUN)) %>% 
+  left_join(s23_counts, by = c("ENTIDAD_RES", "MUNICIPIO_RES"))
+
+case_map <- tm_shape(merida_cases) +
+  tm_polygons("cases", style = "quantile")
+tmap::tmap_save(
+  case_map,
+  filename = "case_map.png",
+  device = grDevices::png
+)
+
+```
+
 
 
 ## Some Cleaning
