@@ -479,8 +479,8 @@ ggsave("clusters_on_yuc_e.pdf")
 # (municipal buildings or administrative offices, parks or gardens)
 # eepe - External Polygon (no)
 # eepem - External Block Polygon (probably not)
-yuc_fm <- st_read(dsn = here("31_yucatan_2020/conjunto_de_datos"),
-                    layer = "31fm")
+yuc_m_big <- st_read(dsn = here("31_yucatan_2020/conjunto_de_datos"),
+                    layer = "31m")
 yuc_fm <- yuc_fm %>% 
   filter(CVE_MUN == "041" | CVE_MUN == "050")
 ggplot() +
@@ -507,16 +507,63 @@ merida_cases <- yuc_m_by_entmun %>%
          MUNICIPIO_RES = as.numeric(CVE_MUN)) %>% 
   left_join(s23_counts, by = c("ENTIDAD_RES", "MUNICIPIO_RES"))
 
-case_map <- tm_shape(merida_cases) +
-  tm_polygons("cases", style = "quantile")
-tmap::tmap_save(
-  case_map,
-  filename = "case_map.png",
-  device = grDevices::png
-)
+ggplot() +
+  geom_sf(data = merida_cases, linewidth = 0.05) +
+  # geom_sf(data = cases, size = 0.75, stroke = 0,
+  #         aes(color = as.factor(Source))) +
+  # scale_fill_manual(values = c("ivory4", "dodgerblue4"), 
+  #                   name = "TIRS", labels = c("No", "Yes")) + 
+  # guides(color = guide_legend(override.aes = list(size = 3))) +
+  # scale_color_manual(values = c("cadetblue3", "coral2"), 
+  #                   name = "Source", labels = c("TIRS", "SINAVE")) +
+  theme_minimal()
 
+
+season23 %>% group_by(ENTIDAD_RES, MUNICIPIO_RES) %>% 
+  summarize(cases = n()) %>% 
+  arrange(desc(cases))
 ```
 
+Ok i think that earlier population count was incorrect -- try again by just overlapping the areas
+```{r}
+# population for all areas of the city
+yuc_m_pop <- yuc_m %>% 
+  right_join(yuc_cluster_pops, by = c("CVEGEO", "CVE_ENT", "CVE_MUN",
+                                     "CVE_LOC", "CVE_AGEB", "CVE_MZA"))
+
+# now overlap these populations counts with the shapefiles for the clusters
+clusters <- st_transform(clusters, st_crs(yuc_m_pop))
+intersections <- st_intersection(yuc_m_pop, clusters)
+
+# great NOW i can go by TIRS cluster and block to see what the population of each is
+pop_cluster <- intersections %>% 
+  group_by(CLUSTER, MZTIRS) %>% 
+  summarize(Block_Population = sum(POBTOT))
+pop_block <- intersections %>% 
+  group_by(CLUSTER) %>% 
+  summarize(Block_Population = sum(POBTOT))
+
+ggplot() +
+  geom_sf(data = intersections, linewidth = 0.05) +
+ # geom_sf(data = yuc_fm, linewidth = 0.005, color = "red") +
+  geom_sf(data = clusters, linewidth = 0.005, color = "blue")
+ggsave("clusters_pop.pdf")
+```
+
+
+Comparing proportion of cases within the study area vs the rest of the city?
+```{r}
+# city as a whole
+# number of cases in MERIDA (aka mun = 050 or 041)
+merida_cases23 <- season23 %>% 
+  filter(ENTIDAD_RES == 31 & (MUNICIPIO_RES == 50 | MUNICIPIO_RES == 41))
+# all cases in merida caught by moh / total population of merida
+nrow(merida_cases23) / sum(yuc_m_pop$POBTOT)
+
+# trial area
+# num cases in trial / total population of trial area
+nrow(denv23) / sum(intersections$POBTOT)
+```
 
 
 ## Some Cleaning
