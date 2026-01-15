@@ -25,7 +25,9 @@ pacman::p_load(sf, # spatial
                fuzzyjoin, # joining with some inexact
                spdep, # regression spatial
                tmap, # spatial maps
-               sjlabelled # table 1 labels for sf
+               sjlabelled, # table 1 labels for sf
+               geepack, # for regression
+               lme4
                )
 ```
 
@@ -125,11 +127,26 @@ ggplot() +
 ggsave("merida_cases_clusters.pdf")
 ```
 
-By intervention, only Dengue 2023
+By intervention, only Dengue 2023 cases
+```{r}
+ggplot() +
+  geom_sf(data = merida_clean_sf, linewidth = 0.05) +
+  geom_sf(data = clusters_sf, linewidth = 0.05, aes(fill = as.factor(TIRS)),
+          alpha = 0.85) +
+  geom_sf(data = denv23, size = 0.25, stroke = 0) +
+  scale_fill_manual(values = c("tomato", "darkolivegreen3"), 
+                    name = "TIRS Trial Arm", labels = c("Control", 
+                                                        "Intervention")) +
+  theme_minimal()
+ggsave("merida_23denv_cases.pdf")
+```
+
+
 
 # Table 1
 Formatting
 ```{r}
+### for trial cases
 test <- denv23
 test$Arm_1TIRS <- 
   factor(test$Arm_1TIRS, levels = c(0, 1),
@@ -142,15 +159,33 @@ test$Arm_1TIRS <- set_label(test$Arm_1TIRS, "Trial Arm")
 test$Week_onset <- set_label(test$Week_onset, "Week of Symptom Onset*")
 
 footnote <- "*Week of the year"
+
+## for all merida cases
+s23$SEXO <- 
+  factor(s23$SEXO, levels = c(1, 2),
+         labels = c("Female",
+                    "Male"))
+s23$SEXO <- setLabel(s23$SEXO, "Sex")
+s23$EDAD_ANOS <- set_label(s23$EDAD_ANOS, "Age")
+s23$Week_onset <- set_label(s23$Week_onset, "Week of Symptom Onset*")
 ```
 
-Make Table
+Make Table 1 for TIRS cases
 ```{r}
-case_tab <- table1(~ Age + Arm_1TIRS + Week_onset | Source, data = test,
+case_tab <- table1(~ Age + Source + Arm_1TIRS + Week_onset, data = test,
        footnote=footnote)
 case_tab <- as.data.frame(case_tab)
-print(xtable(case_tab, type = "latex"), file = "case_tab.tex")
+print(xtable(case_tab, type = "latex"), file = "23denv_case_tab.tex")
 ```
+
+Table 1 for all city cases
+```{r}
+case_tab_merida <- table1(~ SEXO + EDAD_ANOS + Week_onset, data = s23,
+       footnote=footnote)
+case_tab_merida <- as.data.frame(case_tab_merida)
+print(xtable(case_tab_merida, type = "latex"), file = "23denv_merida_cases_tab.tex")
+```
+
 
 # Cases over time
 Cases counts from all of Mérida and the TRIAL
@@ -167,16 +202,16 @@ With same y axis
 ```{r}
 ggplot() +
   geom_col(data = s23_case_counts,
-           aes(x = Week_onset, y = n, fill = "SINAVE"),
+           aes(x = Week_onset, y = n, fill = "Mérida"),
            alpha = 0.6) + 
   geom_col(data = trial_case_counts,
-           aes(x = Week_onset, y = n, fill = "TIRS")) +
-  scale_fill_manual(values = c("TIRS" = "steelblue",
-                               "SINAVE" = "firebrick")) +
+           aes(x = Week_onset, y = n, fill = "Trial")) +
+  scale_fill_manual(values = c("Trial" = "steelblue",
+                               "Mérida" = "firebrick")) +
   labs(x = "Week of Symptom Onset",
        y = "Number of Cases",
-       fill = "Source",
-       title = "Dengue Cases by Week in 2023 (TIRS vs. SINAVE)") +
+       fill = "Location",
+       title = "Dengue Cases by Week in 2023 (Trial clusters vs. City of Mérida)") +
   scale_x_continuous(
     breaks = seq(1, 53, by = 2)
   ) +
@@ -208,6 +243,64 @@ nrow(s23) / sum(merida_sf$POBTOT)
 nrow(denv23) / sum(clusters_sf$POBTOT)
 ```
 
+# Regression
+Oh. Just TIRS?
+
+Clean Data
+```{r}
+tirs_cohort <- readRDS(file = "all_cases_labeled.rds")
+
+# Okay, now I want all participants, and they get the indicator if their event was dengue in 2023, else 0 (not just first event)
+control_clusters <- data %>% group_by(cluster) %>% summarize(trial_arm = mean(trial_arm, na.rm = TRUE)) %>% filter(trial_arm == 0)
+data <- tirs_cohort %>% 
+  # if pos_all == 0 did not experience event -- censored 
+  mutate(Pos_All = ifelse(is.na(Pos_All), 0, Pos_All),
+         Dengue = ifelse((denv_case == 1 | denv_chikv == 1 | denv_zikv == 1),
+                           1, 0),
+         Symp_Date = mdy(var6_symp_date),
+         Time2 = if_else(Pos_All == 1 & Symp_Date < Exit_Date, Symp_Date,
+                        Exit_Date),
+         Age =  year(as.period(interval(start = mdy(rn2_pt_dob), end = Time2))),
+         block_id = str_sub(PPID, 3, 4),
+         cluster_id = str_sub(PPID, 1, 2),
+         trial_arm = ifelse(cluster %in% control_clusters$cluster, 0, 1)) %>% 
+  relocate(c(Age, Symp_Date, Time2, Dengue), .after = Exit_Date)  %>%
+  # drop missing enrollment/exit dates?
+  # also only dengue cases that occurred in 2023
+  filter(!is.na(Enrolm_Date)) %>% 
+  filter(year(Time2) >= 2023)
+```
+
+GEE Regression??
+```{r}
+# logistic GEE?
+gee_block <- geeglm(Dengue ~ trial_arm + rn2_pt_sex + Age,
+                  family = poisson,
+                  id = block_id,
+                  corstr = "exchangeable",
+                  data = data)
+gee_cluster <- geeglm(Dengue ~ trial_arm + rn2_pt_sex + Age,
+                  family = poisson,
+                  id = cluster,
+                  corstr = "exchangeable",
+                  data = data)
+
+summary(gee_block)
+# alpha = 0.0786.....not...a lot of within-block correlation?
+summary(gee_cluster)
+# alpha = 0.0135 also gnsdjfhsdjj no 
+```
+Mixed-effects logistic regression?
+```{r}
+help <- glmer(Dengue ~ trial_arm + Age + rn2_pt_sex + (1 | cluster_id) +
+                (1 | block_id), family = binomial, data = data)
+summary(help) #hmmghdsks
+
+# icc?
+```
+
+
+TIRS + population numbers?
 
 
 

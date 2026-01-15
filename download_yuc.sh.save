@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+download_states() {
+    mkdir -p "$LOCAL_DIR"/scince_2020
+
+    i=31
+    echo "Downloading ${states[$i]}..."
+
+    FILENUM="$i"   # already two digits
+
+    curl -sLo "$TEMP_DIR"/scince_$FILENUM.exe \
+         https://gaia.inegi.org.mx/scince2020desktop/$FILENUM/SCINCE2020_DATOS_$FILENUM.exe
+
+    (cd "$TEMP_DIR" && \
+         "$TEMP_DIR"/innoextract-1.9-linux/innoextract \
+            --lowercase \
+            --silent "$TEMP_DIR"/scince_$FILENUM.exe)
+
+    find "$TEMP_DIR"/app -depth -type f -regextype posix-extended \
+         -regex '.*\.(dbf|cpg|prj|shp|rtree|shx)' \
+         -execdir sh -c 'mv $1 "$2"_$(basename $1)' _ {} "yuc" \;
+
+    DIR=$(find "$TEMP_DIR"/app -mindepth 1 -maxdepth 1 -type d -name '[0-9]*' -print)
+    mv "$DIR" "$LOCAL_DIR/scince_2020/yuc"
+
+    rm -rf "$TEMP_DIR"/app "$TEMP_DIR"/tmp
+}A
+
