@@ -109,8 +109,21 @@ s23 <- season23 %>%
 # from TIRS trial locations, only DENV cases from 2023
 denv23 <- cases_sf %>% #674 cases
   filter((str_detect(Diagnosis, "DENV") | str_detect(Diagnosis, "DENGUE"))
-         & Year == 2023) # only dengue, only 2023
+         & Year == 2023) %>% # only dengue, only 2023 
+  mutate(age_grp = as.factor(ifelse(Age < 18, "Child", "Adult")),
+         TIRS = factor(TIRS, levels = c(0, 1), 
+                       labels = c("Control", "TIRS Intervention")))
+# only adult cases (< 18)
+adult_denv23 <- denv23 %>%
+  filter(Age >= 18)
+# child dengue cases
+child_denv23 <- denv23 %>% 
+  filter(Age < 18)
 ```
+
+Number of dengue cases in 2023: `r nrow(denv23)` \\
+Number of adult dengue cases in 2023: `r nrow(adult_denv23)`
+Number of child dengue cases in 2023: `r nrow(child_denv23)`
 
 # Map
 By Intervention, all cases
@@ -123,24 +136,80 @@ ggplot() +
   scale_fill_manual(values = c("tomato", "darkolivegreen3"), 
                     name = "TIRS Trial Arm", labels = c("Control", 
                                                         "Intervention")) +
+  ggtitle("All Dengue Cases in Trial Geographic Area") + 
   theme_minimal()
 ggsave("merida_cases_clusters.pdf")
 ```
 
-By intervention, only Dengue 2023 cases
+By intervention and age, only Dengue 2023 cases
 ```{r}
+ggplot() +
+  geom_sf(data = merida_clean_sf, linewidth = 0.05) +
+  geom_sf(data = clusters_sf, linewidth = 0.05, aes(fill = as.factor(TIRS)), 
+          alpha = 0.85) +
+  geom_sf(data = denv23, size = 0.25, stroke = 0, aes(color = age_grp)) +
+  scale_fill_manual(values = c("tomato", "darkolivegreen3"), 
+                    name = "TIRS Trial Arm", labels = c("Control", 
+                                                        "Intervention")) +
+  scale_color_manual(values = c("white", "black"), name = "Age Group") +
+  guides(fill = guide_legend(keyheight = unit(2, "mm"), 
+                             keywidth  = unit(2, "mm"),
+                             title.theme = element_text(size = 2), 
+                             label.theme = element_text(size = 2)),
+         color = guide_legend(keyheight = unit(2, "mm"), 
+                             keywidth  = unit(2, "mm"),
+                             title.theme = element_text(size = 2), 
+                             label.theme = element_text(size = 2))) +
+  ggtitle("Dengue Cases in 2023, by Intervention and Age") +  
+  theme(legend.spacing.y = unit(1, "mm"), 
+        legend.box.margin = margin(2, 2, 2, 0)) +
+  theme_minimal()
+ggsave("denv23_tirs_age.pdf")
+```
+
+By intervention and age, dengue 2023 cases
+```{r}
+# adults
 ggplot() +
   geom_sf(data = merida_clean_sf, linewidth = 0.05) +
   geom_sf(data = clusters_sf, linewidth = 0.05, aes(fill = as.factor(TIRS)),
           alpha = 0.85) +
-  geom_sf(data = denv23, size = 0.25, stroke = 0) +
+  geom_sf(data = adult_denv23, size = 0.25, stroke = 0) +
   scale_fill_manual(values = c("tomato", "darkolivegreen3"), 
                     name = "TIRS Trial Arm", labels = c("Control", 
                                                         "Intervention")) +
+  guides(fill = guide_legend(keyheight = unit(2, "mm"), 
+                             keywidth  = unit(2, "mm"),
+                             title.theme = element_text(size = 2), 
+                             label.theme = element_text(size = 2))) +
+  ggtitle("Dengue Cases Among Adults (>= 18 years) in 2023") + 
+  theme(legend.spacing.y = unit(1, "mm"), 
+        legend.box.margin = margin(2, 2, 2, 0)) +
   theme_minimal()
-ggsave("merida_23denv_cases.pdf")
+ggsave("adult_denv23_cases.pdf")
 ```
 
+
+```{r}
+# children
+ggplot() +
+  geom_sf(data = merida_clean_sf, linewidth = 0.05) +
+  geom_sf(data = clusters_sf, linewidth = 0.05, aes(fill = as.factor(TIRS)),
+          alpha = 0.85) +
+  geom_sf(data = child_denv23, size = 0.25, stroke = 0) +
+  scale_fill_manual(values = c("tomato", "darkolivegreen3"), 
+                    name = "TIRS Trial Arm", labels = c("Control", 
+                                                        "Intervention")) +
+  guides(fill = guide_legend(keyheight = unit(2, "mm"), 
+                             keywidth  = unit(2, "mm"),
+                             title.theme = element_text(size = 2), 
+                             label.theme = element_text(size = 2))) +
+  ggtitle("Dengue Cases Among Children (< 18 years) in 2023") + 
+  theme(legend.spacing.y = unit(1, "mm"), 
+        legend.box.margin = margin(2, 2, 2, 0)) +
+  theme_minimal()
+ggsave("child_denv23_cases.pdf")
+```
 
 
 # Table 1
@@ -178,7 +247,7 @@ case_tab <- as.data.frame(case_tab)
 print(xtable(case_tab, type = "latex"), file = "23denv_case_tab.tex")
 ```
 
-Table 1 for all city cases
+Table 1 for all city cases of dengue in 2023
 ```{r}
 case_tab_merida <- table1(~ SEXO + EDAD_ANOS + Week_onset, data = s23,
        footnote=footnote)
@@ -186,16 +255,59 @@ case_tab_merida <- as.data.frame(case_tab_merida)
 print(xtable(case_tab_merida, type = "latex"), file = "23denv_merida_cases_tab.tex")
 ```
 
+Table 1 for all dengue cases in 2023 (adults and children)
+```{r}
+table1(~ as.numeric(Age) + TIRS + Week_onset, data = denv23)
+```
+
+
+Table 1 for children and adults
+```{r}
+# labels
+denv23$Week_onset <- set_label(denv23$Week_onset, "Week of Symptom Onset*")
+denv23$Age <- as.numeric(set_label(denv23$Age, "Age"))
+
+
+
+# table1
+by_age_table1 <- as.data.frame(table1(~ Age + TIRS + Week_onset |
+                                                     age_grp, data = denv23,
+                                                   footnote = footnote,
+                                                   render.missing = NULL))
+print(xtable(by_age_table1, type = "latex"), 
+      file = "by_age_table1.tex")
+```
+
+# Bar Plot
+```{r}
+ggplot(denv23, aes(x = TIRS,fill = age_grp)) +
+  geom_bar(position = "stack") +
+  labs(title = "Dengue cases in 2023 among adults and children, by trial arm",
+       x = "Trial Arm",
+       y = "Number of cases",
+       fill = "Age group") +
+  theme_classic() +
+  scale_fill_manual(values = c("Adult" = "#DC3220", "Child" = "#005AB5"))
+ggsave("denv23_cases_stacked_bar.pdf")
+```
+
 
 # Cases over time
-Cases counts from all of Mérida and the TRIAL
+
 ```{r}
+# Cases counts from all of Mérida and the TRIAL
 s23_case_counts <- s23 %>% 
   count(Week_onset)
 trial_case_counts <- cases_sf %>% 
   filter(Source == "TIRS") %>% 
   count(Week_onset) %>% 
   st_drop_geometry()
+
+# All dengue 2023 cases, by age group
+denv23_adult_counts <- adult_denv23 %>% 
+  count(Week_onset)
+denv23_child_conts <- child_denv23 %>% 
+  count(Week_onset)
 ```
 
 With same y axis
@@ -218,6 +330,37 @@ ggplot() +
   theme_classic()
 ggsave("cases_by_week_denv23.pdf")
 ```
+
+By age
+```{r}
+ggplot(denv23, aes(x = Week_onset, fill = age_grp)) +
+  geom_bar(position = "stack") +
+  labs(title = "Dengue cases in 2023 among adults and children",
+       x = "Week of Symptom Onset",
+       y = "Number of cases",
+       fill = "Age group") +
+  theme_classic() +
+  scale_fill_manual(values = c("Adult" = "#DC3220", "Child" = "#005AB5")) +
+  scale_x_continuous(breaks = seq(1, 53, by = 2))
+ggsave("adult_children_stackedbar.pdf")
+
+
+ggplot() +
+  geom_line(data = denv23_adult_counts,
+           aes(x = Week_onset, y = n, color = "Adult")) + 
+  geom_line(data = denv23_child_conts,
+           aes(x = Week_onset, y = n, color = "Child")) +
+  labs(x = "Week of Symptom Onset",
+       y = "Number of Cases",
+       fill = "Location",
+       title = "Dengue Cases for Adults and Children") +
+  scale_x_continuous(breaks = seq(1, 53, by = 2)) +
+  theme_classic() +
+  scale_color_manual(values = c("Adult" = "#DC3220", "Child" = "#005AB5"),
+                     name = "Age Group")
+ggsave("adult_children_line.pdf")
+```
+
 
 # Case  proportions
 ```{r}
@@ -300,7 +443,11 @@ summary(help) #hmmghdsks
 ```
 
 
-TIRS + population numbers?
+# Natalie's calculations
+```{r}
+1 - 150/202
+```
+
 
 
 
