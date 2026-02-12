@@ -38,110 +38,121 @@ Read in data
 ```{r}
 # ## Population of Mérida + Kanasín (old)
 yuc_pop <- read.csv("RESAGEBURB2020 - 31 Yucatán.csv")
+
 ## Mérida + Kanasín shapefile from INEGI (eem - Block Polygons)
-yuc_m<- st_read(dsn = here("31_yucatan_2020/conjunto_de_datos"),
+merida_block_sf <- st_read(dsn = here("31_yucatan_2020/conjunto_de_datos"),
                     layer = "31m")
-yuc_m <- yuc_m %>% 
+merida_block_sf <- merida_block_sf %>% 
   filter(CVE_MUN == "041" | CVE_MUN == "050")
 
 ## Mérida + Kanasín shapefile from INEGI (eea - Basic Urban Geostatistical Areas)
-merida_clean_sf <- st_read(dsn = here("31_yucatan_2020/conjunto_de_datos"),
+merida_cluster_sf <- st_read(dsn = here("31_yucatan_2020/conjunto_de_datos"),
                     layer = "31a")
-merida_clean_sf <- merida_clean_sf %>% 
+merida_cluster_sf <- merida_cluster_sf %>% 
   filter(CVE_MUN == "041" | CVE_MUN == "050")
 
 ## SINAVE case data
-season23 <- here::here("data", "SINAVE_Data", 
+sinave_all_cases <- here::here("data", "SINAVE_Data", 
                        "datos_abiertos_dengue_061223.csv") %>%
   rio::import() %>% 
   dplyr::as_tibble()
 
 ## Cases Shapefile
-sus <- st_read(dsn = here("data"), 
+cases_sf <- st_read(dsn = here("data"), 
                  layer = "TIRS_SINAVE_22_23")
-sus <- st_transform(sus, st_crs(yuc_m)) # make sure same st_crs
-## Cases by TIRS block
-sinave_block <- read_csv("data/TIRS_SINAVE_combined22_23_blockID.csv")
+
+## Cases by TIRS block (not a shapefile, will add this info onto the shapefile)
+cases_tirs_info <- read_csv("data/TIRS_SINAVE_combined22_23_blockID.csv")
 
 ## TIRS Clusters Shapefile
 clusters_sf <- st_read(dsn = here("data"),
                     layer = "Cluster final 2021 actualizado")
-clusters_sf <- st_transform(clusters_sf, st_crs(yuc_m)) # make sure same st_crs
 
-## Population from Worldpop (new)
-yuc_pop_world <- rast("mex_ppp_2020_UNadj_constrained.tif")
-yuc_m <- st_transform(yuc_m, st_crs(yuc_pop_world))
-sus <- st_transform(sus, st_crs(yuc_pop_world))
-clusters_sf <- st_transform(clusters_sf, st_crs(yuc_pop_world)) 
-merida_clean_sf <- st_transform(merida_clean_sf, st_crs(yuc_pop_world))
+# make sure all sf files have the same coordinates 
+merida_cluster_sf <- st_transform(merida_cluster_sf, st_crs(merida_block_sf))
+cases_sf <- st_transform(cases_sf, st_crs(merida_block_sf))
+clusters_sf <- st_transform(clusters_sf, st_crs(merida_block_sf))
+
+# ## Population from Worldpop (new)
+# yuc_pop_world <- rast("mex_ppp_2020_UNadj_constrained.tif")
+# yuc_m <- st_transform(yuc_m, st_crs(yuc_pop_world))
+# sus <- st_transform(sus, st_crs(yuc_pop_world))
+# clusters_sf <- st_transform(clusters_sf, st_crs(yuc_pop_world)) 
+# merida_clean_sf <- st_transform(merida_clean_sf, st_crs(yuc_pop_world))
+# 
+# ggplot() +
+#   geom_sf(data = yuc_m, linewidth = 0.05) +
+#   geom_sf(data = clusters_sf, color = "blue", linewidth = 0.05)
+# ggsave("are_TIRS_blocks_and_SINAVE_MZA_the_same.pdf")
 ```
 
 ## Some Cleaning
-Putting all information into the shapefiles
+### update shapefiles 
+to include extra data
 ```{r}
-# # MOH data:
-# ## add CVEGEO to population dataset
-# yuc_pop_cvegeo <- yuc_pop %>% 
-#   mutate(CVE_ENT = as.character(ENTIDAD),
-#          CVE_MUN = paste0("0", MUN),
-#          CVE_LOC = paste0("000", LOC),
-#          CVE_AGEB = AGEB,
-#          CVE_MZA = ifelse(nchar(as.character(yuc_pop$MZA)) == 3, 
-#                           as.character(MZA),
-#                           ifelse(nchar(as.character(yuc_pop$MZA)) == 2, 
-#                                  paste0("0", MZA), paste0("00", MZA))),
-#          CVEGEO = paste0(CVE_ENT, CVE_MUN, CVE_LOC, CVE_AGEB, CVE_MZA))
-# yuc_pop_cvegeo <- yuc_pop_cvegeo[-c(1:3),]
+# Population Data
+## add CVEGEO to population dataset
+yuc_pop <- yuc_pop %>%
+  mutate(CVE_ENT = as.character(ENTIDAD),
+         CVE_MUN = paste0("0", MUN),
+         CVE_LOC = paste0("000", LOC),
+         CVE_AGEB = AGEB,
+         CVE_MZA = ifelse(nchar(as.character(yuc_pop$MZA)) == 3,
+                          as.character(MZA),
+                          ifelse(nchar(as.character(yuc_pop$MZA)) == 2,
+                                 paste0("0", MZA), paste0("00", MZA))),
+         CVEGEO = paste0(CVE_ENT, CVE_MUN, CVE_LOC, CVE_AGEB, CVE_MZA))
+yuc_pop <- yuc_pop[-c(1:3),]
 
-## population for all areas of the city (add population numbers to shapefile)
-merida_sf <- yuc_m %>% 
-  right_join(yuc_pop_cvegeo, by = c("CVEGEO", "CVE_ENT", "CVE_MUN",
+## now add this population data into the shapefile to get a shapefile with pop
+##   data
+merida_block_sf <- merida_block_sf %>% 
+  right_join(yuc_pop, by = c("CVEGEO", "CVE_ENT", "CVE_MUN",
                                      "CVE_LOC", "CVE_AGEB", "CVE_MZA"))
 
-# TIRS data -- all cases
-cases_sf <- cbind(sus, sinave_block[,c("CVEGEO", "CVE_MZA", "CLUSTER", "MZA3X3",
-                                       "MZTIRS", "TIRS")])
+# Case Data
+## Add TIRS blockid info to cases_sf so the sf now has TIRS id
+cases_sf <- cbind(cases_sf, cases_tirs_info[,c("CVEGEO", "CVE_MZA", "CLUSTER", 
+                                               "MZA3X3", "MZTIRS", "TIRS")])
 
-####################### 
-# population stuff, based on Matt's code
-# (population of clusters only !!!)
-population <- exact_extract(yuc_pop_world, clusters_sf, fun = "sum", # total population?
-                            append_cols = 
-                              c("CLUSTER", "MZTIRS", "TIRS",
-                                "CVEGEO", "CVE_ENT", "CVE_MUN",
-                                "CVE_LOC", "CVE_AGEB", "CVE_MZA")) |> 
-  rename(block_pop = sum)
-
-sum(population$block_pop)
-
-ggplot(yuc_m)+
-  geom_sf()
-
-plot(yuc_pop_world)
-
-# cluster_pops <- yuc_m %>% 
-#   right_join(population, by = c("CVEGEO", "CVE_ENT", "CVE_MUN",
-#                                      "CVE_LOC", "CVE_AGEB", "CVE_MZA"))
-#######
-# population of entire city
-merida_pop <- exact_extract(yuc_pop_world, merida_clean_sf, fun = "sum", # total population?
-                            append_cols = 
-                              c("CVEGEO", "CVE_ENT", "CVE_MUN",
-                                "CVE_LOC", "CVE_AGEB")) |> 
-  rename(block_pop = sum)
-
-sum(merida_pop$block_pop)
-
-clusters_sf
-head(merida_clean_sf)
-
-
+# ####################### 
+# # population stuff, based on Matt's code
+# # (population of clusters only !!!)
+# population <- exact_extract(yuc_pop_world, clusters_sf, fun = "sum", # total population?
+#                             append_cols = 
+#                               c("CLUSTER", "MZTIRS", "TIRS",
+#                                 "CVEGEO", "CVE_ENT", "CVE_MUN",
+#                                 "CVE_LOC", "CVE_AGEB", "CVE_MZA")) |> 
+#   rename(block_pop = sum)
+# 
+# sum(population$block_pop)
+# 
+# ggplot(yuc_m)+
+#   geom_sf()
+# 
+# plot(yuc_pop_world)
+# 
+# # cluster_pops <- yuc_m %>% 
+# #   right_join(population, by = c("CVEGEO", "CVE_ENT", "CVE_MUN",
+# #                                      "CVE_LOC", "CVE_AGEB", "CVE_MZA"))
+# #######
+# # population of entire city
+# merida_pop <- exact_extract(yuc_pop_world, merida_clean_sf, fun = "sum", # total population?
+#                             append_cols = 
+#                               c("CVEGEO", "CVE_ENT", "CVE_MUN",
+#                                 "CVE_LOC", "CVE_AGEB")) |> 
+#   rename(block_pop = sum)
+# 
+# sum(merida_pop$block_pop)
+# 
+# clusters_sf
+# head(merida_clean_sf)
 ```
 
-Only confirmed Dengue 2023 cases
+### dengue 2023 cases only
 ```{r}
 # select cases of all the CONFIRMED 2023 dengue cases
-s23 <- season23 %>% 
+sinave_all_dengue <- sinave_all_cases %>% 
   # only want data for Mérida + Kanasín (050, 041 MUNICIPO_RES)
   filter(MUNICIPIO_RES == 50 | MUNICIPIO_RES == 41) %>% 
   # change symptom onset date to match cases dataset (i.e., weeks since 
@@ -150,187 +161,115 @@ s23 <- season23 %>%
          Week_onset = epiweek(Week_onset),
          Year = year(FECHA_SIGN_SINTOMAS)) %>%
   relocate(c(FECHA_SIGN_SINTOMAS, Week_onset), .before = ID_REGISTRO) %>% 
-  filter(ESTATUS_CASO == 2) # 1 likely; 2 confirmed; 3 discarded
+  filter(ESTATUS_CASO == 2) %>%  # 1 likely; 2 confirmed; 3 discarded
+  mutate(age_grp = as.factor(ifelse(EDAD_ANOS < 18, "Child", "Adult")))
 
-# from TIRS trial locations, only DENV cases from 2023
-denv23 <- cases_sf %>% #674 cases
+# all DENV cases from the TIRS trial area
+denv_cases_sf <- cases_sf %>% #674 cases
   filter((str_detect(Diagnosis, "DENV") | str_detect(Diagnosis, "DENGUE"))
          & Year == 2023) %>% # only dengue, only 2023 
   mutate(age_grp = as.factor(ifelse(Age < 18, "Child", "Adult")),
          TIRS = factor(TIRS, levels = c(0, 1), 
                        labels = c("Control", "TIRS Intervention")))
 # only adult cases (< 18)
-adult_denv23 <- denv23 %>%
+denv_adult_cases_sf <- denv_cases_sf %>%
   filter(Age >= 18)
 # child dengue cases
-child_denv23 <- denv23 %>% 
+denv_kid_cases_sf <- denv_cases_sf %>% 
   filter(Age < 18)
 ```
 
-Number of dengue cases in 2023: `r nrow(denv23)` \\
-Number of adult dengue cases in 2023: `r nrow(adult_denv23)`
-Number of child dengue cases in 2023: `r nrow(child_denv23)`
+Number of dengue cases in 2023: `r nrow(denv_cases_sf)`
+Number of adult dengue cases in 2023: `r nrow(denv_adult_cases_sf)` 
+Number of child dengue cases in 2023: `r nrow(denv_kid_cases_sf)`
 
-# Map
-By Intervention, all cases
+# Tables
+Demographic info on the dengue cases
+## (city) table1 for confirmed dengue cases in the entire city
 ```{r}
-ggplot() +
-  geom_sf(data = merida_clean_sf, linewidth = 0.05) +
-  geom_sf(data = clusters_sf, linewidth = 0.05, aes(fill = as.factor(TIRS)),
-          alpha = 0.85) +
-  geom_sf(data = cases_sf, size = 0.25, stroke = 0) +
-  scale_fill_manual(values = c("tomato", "darkolivegreen3"), 
-                    name = "TIRS Trial Arm", labels = c("Control", 
-                                                        "Intervention")) +
-  ggtitle("All Dengue Cases in Trial Geographic Area") + 
-  theme_minimal()
-ggsave("merida_cases_clusters.pdf")
-```
+# sinave_all_dengue is all confirmed dengue cases in the city
 
-By intervention and age, only Dengue 2023 cases
-```{r}
-ggplot() +
-  geom_sf(data = merida_clean_sf, linewidth = 0.05) +
-  geom_sf(data = clusters_sf, linewidth = 0.05, aes(fill = as.factor(TIRS)), 
-          alpha = 0.85) +
-  geom_sf(data = denv23, size = 0.25, stroke = 0, aes(color = age_grp)) +
-  scale_fill_manual(values = c("tomato", "darkolivegreen3"), 
-                    name = "TIRS Trial Arm", labels = c("Control", 
-                                                        "Intervention")) +
-  scale_color_manual(values = c("white", "black"), name = "Age Group") +
-  guides(fill = guide_legend(keyheight = unit(2, "mm"), 
-                             keywidth  = unit(2, "mm"),
-                             title.theme = element_text(size = 2), 
-                             label.theme = element_text(size = 2)),
-         color = guide_legend(keyheight = unit(2, "mm"), 
-                             keywidth  = unit(2, "mm"),
-                             title.theme = element_text(size = 2), 
-                             label.theme = element_text(size = 2))) +
-  ggtitle("Dengue Cases in 2023, by Intervention and Age") +  
-  theme(legend.spacing.y = unit(1, "mm"), 
-        legend.box.margin = margin(2, 2, 2, 0)) +
-  theme_minimal()
-ggsave("denv23_tirs_age.pdf")
-```
-
-By intervention and age, dengue 2023 cases
-```{r}
-# adults
-ggplot() +
-  geom_sf(data = merida_clean_sf, linewidth = 0.05) +
-  geom_sf(data = clusters_sf, linewidth = 0.05, aes(fill = as.factor(TIRS)),
-          alpha = 0.85) +
-  geom_sf(data = adult_denv23, size = 0.25, stroke = 0) +
-  scale_fill_manual(values = c("tomato", "darkolivegreen3"), 
-                    name = "TIRS Trial Arm", labels = c("Control", 
-                                                        "Intervention")) +
-  guides(fill = guide_legend(keyheight = unit(2, "mm"), 
-                             keywidth  = unit(2, "mm"),
-                             title.theme = element_text(size = 2), 
-                             label.theme = element_text(size = 2))) +
-  ggtitle("Dengue Cases Among Adults (>= 18 years) in 2023") + 
-  theme(legend.spacing.y = unit(1, "mm"), 
-        legend.box.margin = margin(2, 2, 2, 0)) +
-  theme_minimal()
-ggsave("adult_denv23_cases.pdf")
-```
-
-
-```{r}
-# children
-ggplot() +
-  geom_sf(data = merida_clean_sf, linewidth = 0.05) +
-  geom_sf(data = clusters_sf, linewidth = 0.05, aes(fill = as.factor(TIRS)),
-          alpha = 0.85) +
-  geom_sf(data = child_denv23, size = 0.25, stroke = 0) +
-  scale_fill_manual(values = c("tomato", "darkolivegreen3"), 
-                    name = "TIRS Trial Arm", labels = c("Control", 
-                                                        "Intervention")) +
-  guides(fill = guide_legend(keyheight = unit(2, "mm"), 
-                             keywidth  = unit(2, "mm"),
-                             title.theme = element_text(size = 2), 
-                             label.theme = element_text(size = 2))) +
-  ggtitle("Dengue Cases Among Children (< 18 years) in 2023") + 
-  theme(legend.spacing.y = unit(1, "mm"), 
-        legend.box.margin = margin(2, 2, 2, 0)) +
-  theme_minimal()
-ggsave("child_denv23_cases.pdf")
-```
-
-
-# Table 1
-Formatting
-```{r}
-### for trial cases
-test <- denv23
-test$Arm_1TIRS <- 
-  factor(test$Arm_1TIRS, levels = c(0, 1),
-         labels = c("Control",
-                    "TIRS Intervention"))
-test$Age <- as.numeric(test$Age)
-
-test$Age <- set_label(test$Age, "Age")
-test$Arm_1TIRS <- set_label(test$Arm_1TIRS, "Trial Arm")
-test$Week_onset <- set_label(test$Week_onset, "Week of Symptom Onset*")
-
+## formatting
+sinave_all_dengue$SEXO <- 
+  factor(sinave_all_dengue$SEXO, levels = c(1, 2),
+         labels = c("Female", "Male"))
+sinave_all_dengue$SEXO <- setLabel(sinave_all_dengue$SEXO, "Sex")
+sinave_all_dengue$EDAD_ANOS <- set_label(sinave_all_dengue$EDAD_ANOS, "Age")
+sinave_all_dengue$Week_onset <- set_label(sinave_all_dengue$Week_onset, 
+                                          "Week of Symptom Onset*")
 footnote <- "*Week of the year"
 
-## for all merida cases
-s23$SEXO <- 
-  factor(s23$SEXO, levels = c(1, 2),
-         labels = c("Female",
-                    "Male"))
-s23$SEXO <- setLabel(s23$SEXO, "Sex")
-s23$EDAD_ANOS <- set_label(s23$EDAD_ANOS, "Age")
-s23$Week_onset <- set_label(s23$Week_onset, "Week of Symptom Onset*")
+## table
+table1_city <- table1(~ EDAD_ANOS + SEXO + Week_onset | age_grp, data = sinave_all_dengue,
+       render.continuous = c(.= "Mean (SD)", .="Median [Min, Max]",
+                             .= "Median (Q1, Q3)"),
+       footnote = footnote)
+table1_city <- as.data.frame(table1_city)
+
+## print table
+print(xtable(table1_city, type = "latex"), file = "table1_city.tex")
 ```
 
-Make Table 1 for TIRS cases
+## (tirs) table1 for confirmed dengue cases
 ```{r}
-case_tab <- table1(~ Age + Source + Arm_1TIRS + Week_onset, data = test,
-       footnote=footnote)
-case_tab <- as.data.frame(case_tab)
-print(xtable(case_tab, type = "latex"), file = "23denv_case_tab.tex")
+# denv_cases_sf is all the confirmed dengue cases within the tirs trial area
+
+## formatting
+denv_cases_sf$Age <- as.numeric(denv_cases_sf$Age)
+denv_cases_sf$Age <- set_label(denv_cases_sf$Age, "Age")
+denv_cases_sf$TIRS <- set_label(denv_cases_sf$TIRS, "Trial Arm")
+denv_cases_sf$Week_onset <- set_label(denv_cases_sf$Week_onset, 
+                                      "Week of Symptom Onset*")
+
+## table
+table1_tirs <- table1(~ Age + Week_onset + TIRS | age_grp, data = denv_cases_sf,
+       render.continuous = c(.= "Mean (SD)", .="Median [Min, Max]",
+                             .= "Median (Q1, Q3)"),
+       footnote = footnote,
+       render.missing = NULL)
+table1_tirs <- as.data.frame(table1_tirs)
+
+## print table
+print(xtable(table1_tirs, type = "latex"), file = "table1_tirs.tex")
 ```
 
-Table 1 for all city cases of dengue in 2023
+## proportions
 ```{r}
-case_tab_merida <- table1(~ SEXO + EDAD_ANOS + Week_onset, data = s23,
-       footnote=footnote)
-case_tab_merida <- as.data.frame(case_tab_merida)
-print(xtable(case_tab_merida, type = "latex"), file = "23denv_merida_cases_tab.tex")
+# add population info to clusters_sf
+clusters_sf <- st_intersection(merida_block_sf, clusters_sf)
+
+# Populations of each cluster + block
+cluster_population <- clusters_sf %>% 
+  group_by(CLUSTER) %>% 
+  summarize(Cluster_Population = sum(POBTOT))
+block_population <- clusters_sf %>% 
+  group_by(CLUSTER, MZTIRS) %>% 
+  summarize(Block_Population = sum(POBTOT))
 ```
 
-Table 1 for all dengue cases in 2023 (adults and children)
+Comparing proportion of cases within the study area vs the rest of the city?
 ```{r}
-table1(~ as.numeric(Age) + TIRS + Week_onset, data = denv23)
+# All confirmed cases in Mérida caught by MOH / total population of Mérida
+# sinave_all_dengue is all confirmed dengue cases in the city
+nrow(sinave_all_dengue) / sum(merida_block_sf$POBTOT)
+
+# trial area
+# num cases in trial / total population of trial area
+# denv_cases_sf is all the confirmed dengue cases within the tirs trial area
+nrow(denv_cases_sf) / sum(clusters_sf$POBTOT)
 ```
+Number of dengue cases in city: `r nrow(sinave_all_dengue)`
+Population of the city: `r sum(merida_block_sf$POBTOT)`
+Number of dengue cases in trial area: `r nrow(denv_cases_sf) `
+Population of the trial area: `r sum(clusters_sf$POBTOT)`
 
 
-Table 1 for children and adults
+# Figures
+## stacked bar plot
 ```{r}
-# labels
-denv23$Week_onset <- set_label(denv23$Week_onset, "Week of Symptom Onset*")
-denv23$Age <- as.numeric(set_label(denv23$Age, "Age"))
+# denv_cases_sf is all the confirmed dengue cases within the tirs trial area
 
-
-
-# table1
-by_age_table1 <- as.data.frame(table1(~ Age + TIRS + Week_onset |
-                                                     age_grp, data = denv23,
-                                                   footnote = footnote,
-                                                   render.missing = NULL))
-print(xtable(by_age_table1, type = "latex"), 
-      file = "by_age_table1.tex")
-
-quantile(denv23$Week_onset) # for IQR
-quantile(adult_denv23$Week_onset)
-quantile(child_denv23$Week_onset)
-```
-
-# Bar Plot
-```{r}
-ggplot(denv23, aes(x = TIRS,fill = age_grp)) +
+ggplot(denv_cases_sf, aes(x = TIRS,fill = age_grp)) +
   geom_bar(position = "stack") +
   labs(title = "Dengue cases in 2023 among adults and children, by trial arm",
        x = "Trial Arm",
@@ -338,67 +277,26 @@ ggplot(denv23, aes(x = TIRS,fill = age_grp)) +
        fill = "Age group") +
   theme_classic() +
   scale_fill_manual(values = c("Adult" = "#DC3220", "Child" = "#005AB5"))
-ggsave("denv23_cases_stacked_bar.pdf")
+ggsave("denv_tirs_cases_stacked_bar.pdf")
 ```
 
-
-# Cases over time
-
+## line graph adult and child denv cases within trial area
 ```{r}
-# Cases counts from all of Mérida and the TRIAL
-s23_case_counts <- s23 %>% 
-  count(Week_onset)
-trial_case_counts <- cases_sf %>% 
-  filter(Source == "TIRS") %>% 
+# denv_cases_sf is all the confirmed dengue cases within the tirs trial area
+## case counts
+# All dengue 2023 cases, by age group
+denv_adult_counts <- denv_adult_cases_sf %>% 
+  count(Week_onset) %>% 
+  st_drop_geometry()
+denv_kid_counts <- denv_kid_cases_sf %>% 
   count(Week_onset) %>% 
   st_drop_geometry()
 
-# All dengue 2023 cases, by age group
-denv23_adult_counts <- adult_denv23 %>% 
-  count(Week_onset)
-denv23_child_conts <- child_denv23 %>% 
-  count(Week_onset)
-```
-
-With same y axis
-```{r}
+## plot
 ggplot() +
-  geom_col(data = s23_case_counts,
-           aes(x = Week_onset, y = n, fill = "Mérida"),
-           alpha = 0.6) + 
-  geom_col(data = trial_case_counts,
-           aes(x = Week_onset, y = n, fill = "Trial")) +
-  scale_fill_manual(values = c("Trial" = "steelblue",
-                               "Mérida" = "firebrick")) +
-  labs(x = "Week of Symptom Onset",
-       y = "Number of Cases",
-       fill = "Location",
-       title = "Dengue Cases by Week in 2023 (Trial clusters vs. City of Mérida)") +
-  scale_x_continuous(
-    breaks = seq(1, 53, by = 2)
-  ) +
-  theme_classic()
-ggsave("cases_by_week_denv23.pdf")
-```
-
-By age
-```{r}
-ggplot(denv23, aes(x = Week_onset, fill = age_grp)) +
-  geom_bar(position = "stack") +
-  labs(title = "Dengue cases in 2023 among adults and children",
-       x = "Week of Symptom Onset",
-       y = "Number of cases",
-       fill = "Age group") +
-  theme_classic() +
-  scale_fill_manual(values = c("Adult" = "#DC3220", "Child" = "#005AB5")) +
-  scale_x_continuous(breaks = seq(1, 53, by = 2))
-ggsave("adult_children_stackedbar.pdf")
-
-
-ggplot() +
-  geom_line(data = denv23_adult_counts,
+  geom_line(data = denv_adult_counts,
            aes(x = Week_onset, y = n, color = "Adult")) + 
-  geom_line(data = denv23_child_conts,
+  geom_line(data = denv_kid_counts,
            aes(x = Week_onset, y = n, color = "Child")) +
   labs(x = "Week of Symptom Onset",
        y = "Number of Cases",
@@ -411,94 +309,107 @@ ggplot() +
 ggsave("adult_children_line.pdf")
 ```
 
-
-# Case  proportions
+## line graph but rates instead of cases
 ```{r}
-# make shapefile for the clusters + include population counts
-clusters_sf <- st_intersection(merida_sf, clusters_sf)
+# change to rates
+## i'm assuming the denominator stays the same over time?
+## looking at those in the trial area
+## ok why am i looking at rate
+denv_adult_rates <- denv_adult_counts %>%
+  mutate(rate = (n/sum(clusters_sf$POBTOT))*100000)
+denv_kid_rates <- denv_kid_counts %>%
+  mutate(rate = (n/sum(clusters_sf$POBTOT))*100000)
 
-# Populations of each cluster + block
-pop_cluster <- clusters_sf %>% 
-  group_by(CLUSTER, MZTIRS) %>% 
-  summarize(Block_Population = sum(POBTOT))
-pop_block <- clusters_sf %>% 
-  group_by(CLUSTER) %>% 
-  summarize(Block_Population = sum(POBTOT))
+## plot
+ggplot() +
+  geom_line(data = denv_adult_rates,
+           aes(x = Week_onset, y = rate, color = "Adult")) + 
+  geom_line(data = denv_kid_rates,
+           aes(x = Week_onset, y = rate, color = "Child")) +
+  labs(x = "Week of Symptom Onset",
+       y = "Cases per 100,000 people",
+       fill = "Location",
+       title = "Rate of Dengue Cases for Adults and Children within the TIRS Trial Area") +
+  scale_x_continuous(breaks = seq(1, 53, by = 2)) +
+  theme_classic() +
+  scale_color_manual(values = c("Adult" = "#DC3220", "Child" = "#005AB5"),
+                     name = "Age Group")
+ggsave("adult_children_line_rates.pdf")
 ```
 
-Comparing proportion of cases within the study area vs the rest of the city?
+# Maps
+## heatmap for number of cases
 ```{r}
-# All confirmed cases in Mérida caught by MOH / total population of Mérida
-nrow(s23) / sum(merida_sf$POBTOT)
+# denv_cases_sf is all the confirmed dengue cases within the tirs trial area
 
-# trial area
-# num cases in trial / total population of trial area
-nrow(denv23) / sum(clusters_sf$POBTOT)
+## all cases (kids and adults) within each cluster
+case_counts_per_cluster_all <- st_join(denv_cases_sf, clusters_sf, join = st_within) %>% 
+  st_drop_geometry() %>% 
+  count(CLUSTER.x)
+
+## add the case counts to cluster shapefile
+clusters_sf$CLUSTER <- as.numeric(clusters_sf$CLUSTER)
+clusters_cases <- clusters_sf %>% 
+  left_join(case_counts_per_cluster_all, by = c("CLUSTER" = "CLUSTER.x"))
+
+# plot
+ggplot() +
+  geom_sf(data = merida_cluster_sf, linewidth = 0.05) +
+  geom_sf(data = clusters_cases, aes(fill = n), color = "white", 
+          linewidth = 0.05) +
+  scale_fill_viridis_c(name = "Cases") +
+  coord_sf(xlim = c(st_bbox(clusters_sf)$xmin, st_bbox(clusters_sf)$xmax), ## zooom in on cluster area
+           ylim = c(st_bbox(clusters_sf)$ymin, st_bbox(clusters_sf)$ymax), 
+           expand = FALSE) +
+  theme_minimal()
 ```
 
-# Regression
-Oh. Just TIRS?
-
-Clean Data
+## (cluster) heatmap for cases rate
 ```{r}
-tirs_cohort <- readRDS(file = "all_cases_labeled.rds")
+# denv_cases_sf is all the confirmed dengue cases within the tirs trial area
+# case_counts_per_cluster_all is all cases (kids and adults) within each cluster
 
-# Okay, now I want all participants, and they get the indicator if their event was dengue in 2023, else 0 (not just first event)
-control_clusters <- data %>% group_by(cluster) %>% summarize(trial_arm = mean(trial_arm, na.rm = TRUE)) %>% filter(trial_arm == 0)
-data <- tirs_cohort %>% 
-  # if pos_all == 0 did not experience event -- censored 
-  mutate(Pos_All = ifelse(is.na(Pos_All), 0, Pos_All),
-         Dengue = ifelse((denv_case == 1 | denv_chikv == 1 | denv_zikv == 1),
-                           1, 0),
-         Symp_Date = mdy(var6_symp_date),
-         Time2 = if_else(Pos_All == 1 & Symp_Date < Exit_Date, Symp_Date,
-                        Exit_Date),
-         Age =  year(as.period(interval(start = mdy(rn2_pt_dob), end = Time2))),
-         block_id = str_sub(PPID, 3, 4),
-         cluster_id = str_sub(PPID, 1, 2),
-         trial_arm = ifelse(cluster %in% control_clusters$cluster, 0, 1)) %>% 
-  relocate(c(Age, Symp_Date, Time2, Dengue), .after = Exit_Date)  %>%
-  # drop missing enrollment/exit dates?
-  # also only dengue cases that occurred in 2023
-  filter(!is.na(Enrolm_Date)) %>% 
-  filter(year(Time2) >= 2023)
+# cluster_population and block_population are all people in a cluster or block,
+#   respectively
+cluster_population <- cluster_population %>% 
+  st_drop_geometry()
+block_population <- block_population %>% 
+  st_drop_geometry() %>% 
+  mutate(IDMZA = paste0(as.character(CLUSTER), as.character(MZTIRS)))
+
+## add the population to cluster shapefile
+cluster_population$CLUSTER <- as.numeric(cluster_population$CLUSTER)
+block_population$IDMZA <- as.numeric(block_population$IDMZA)
+clusters_rate <- clusters_cases %>% 
+  left_join(cluster_population, by = "CLUSTER") %>% 
+  left_join(block_population, by = c("IDMZA", "MZTIRS", "CLUSTER")) %>% 
+  mutate(rate_cluster = (n/Cluster_Population) * 1000,
+         rate_block = (n / Block_Population) * 10)
+
+# rate by cluster
+ggplot() +
+  geom_sf(data = merida_cluster_sf, linewidth = 0.05) +
+  geom_sf(data = clusters_rate, aes(fill = rate_cluster), color = "white", 
+          linewidth = 0.05) +
+  scale_fill_viridis_c(name = "Cases per 1000 people") +
+  coord_sf(xlim = c(st_bbox(clusters_sf)$xmin, st_bbox(clusters_sf)$xmax), 
+           ylim = c(st_bbox(clusters_sf)$ymin, st_bbox(clusters_sf)$ymax), 
+           expand = FALSE) +
+  theme_minimal()
 ```
 
-GEE Regression??
+## (block) heatmap for cases rate
 ```{r}
-# logistic GEE?
-gee_block <- geeglm(Dengue ~ trial_arm + rn2_pt_sex + Age,
-                  family = poisson,
-                  id = block_id,
-                  corstr = "exchangeable",
-                  data = data)
-gee_cluster <- geeglm(Dengue ~ trial_arm + rn2_pt_sex + Age,
-                  family = poisson,
-                  id = cluster,
-                  corstr = "exchangeable",
-                  data = data)
-
-summary(gee_block)
-# alpha = 0.0786.....not...a lot of within-block correlation?
-summary(gee_cluster)
-# alpha = 0.0135 also gnsdjfhsdjj no 
+ggplot() +
+  geom_sf(data = merida_cluster_sf, linewidth = 0.05) +
+  geom_sf(data = clusters_rate, aes(fill = rate_block), color = "white", 
+          linewidth = 0.05) +
+  scale_fill_viridis_c(name = "Cases per 1000 people") +
+  coord_sf(xlim = c(st_bbox(clusters_sf)$xmin, st_bbox(clusters_sf)$xmax), 
+           ylim = c(st_bbox(clusters_sf)$ymin, st_bbox(clusters_sf)$ymax), 
+           expand = FALSE) +
+  theme_minimal()
 ```
-Mixed-effects logistic regression?
-```{r}
-help <- glmer(Dengue ~ trial_arm + Age + rn2_pt_sex + (1 | cluster_id) +
-                (1 | block_id), family = binomial, data = data)
-summary(help) #hmmghdsks
-
-# icc?
-```
-
-
-# Natalie's calculations
-```{r}
-1 - 150/202
-```
-
-
-
+okay this is nothing
 
 
