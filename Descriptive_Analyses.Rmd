@@ -27,19 +27,23 @@ pacman::p_load(sf, # spatial
                tmap, # spatial maps
                sjlabelled, # table 1 labels for sf
                geepack, # for regression
-               lme4
+               lme4,
+               terra,
+               raster,
+               exactextractr
                )
 ```
 
 Read in data
 ```{r}
-## Population of Mérida + Kanasín 
+# ## Population of Mérida + Kanasín (old)
 yuc_pop <- read.csv("RESAGEBURB2020 - 31 Yucatán.csv")
 ## Mérida + Kanasín shapefile from INEGI (eem - Block Polygons)
 yuc_m<- st_read(dsn = here("31_yucatan_2020/conjunto_de_datos"),
                     layer = "31m")
 yuc_m <- yuc_m %>% 
   filter(CVE_MUN == "041" | CVE_MUN == "050")
+
 ## Mérida + Kanasín shapefile from INEGI (eea - Basic Urban Geostatistical Areas)
 merida_clean_sf <- st_read(dsn = here("31_yucatan_2020/conjunto_de_datos"),
                     layer = "31a")
@@ -63,24 +67,31 @@ sinave_block <- read_csv("data/TIRS_SINAVE_combined22_23_blockID.csv")
 clusters_sf <- st_read(dsn = here("data"),
                     layer = "Cluster final 2021 actualizado")
 clusters_sf <- st_transform(clusters_sf, st_crs(yuc_m)) # make sure same st_crs
+
+## Population from Worldpop (new)
+yuc_pop_world <- rast("mex_ppp_2020_UNadj_constrained.tif")
+yuc_m <- st_transform(yuc_m, st_crs(yuc_pop_world))
+sus <- st_transform(sus, st_crs(yuc_pop_world))
+clusters_sf <- st_transform(clusters_sf, st_crs(yuc_pop_world)) 
+merida_clean_sf <- st_transform(merida_clean_sf, st_crs(yuc_pop_world))
 ```
 
 ## Some Cleaning
 Putting all information into the shapefiles
 ```{r}
-# MOH data:
-## add CVEGEO to population dataset
-yuc_pop_cvegeo <- yuc_pop %>% 
-  mutate(CVE_ENT = as.character(ENTIDAD),
-         CVE_MUN = paste0("0", MUN),
-         CVE_LOC = paste0("000", LOC),
-         CVE_AGEB = AGEB,
-         CVE_MZA = ifelse(nchar(as.character(yuc_pop$MZA)) == 3, 
-                          as.character(MZA),
-                          ifelse(nchar(as.character(yuc_pop$MZA)) == 2, 
-                                 paste0("0", MZA), paste0("00", MZA))),
-         CVEGEO = paste0(CVE_ENT, CVE_MUN, CVE_LOC, CVE_AGEB, CVE_MZA))
-yuc_pop_cvegeo <- yuc_pop_cvegeo[-c(1:3),]
+# # MOH data:
+# ## add CVEGEO to population dataset
+# yuc_pop_cvegeo <- yuc_pop %>% 
+#   mutate(CVE_ENT = as.character(ENTIDAD),
+#          CVE_MUN = paste0("0", MUN),
+#          CVE_LOC = paste0("000", LOC),
+#          CVE_AGEB = AGEB,
+#          CVE_MZA = ifelse(nchar(as.character(yuc_pop$MZA)) == 3, 
+#                           as.character(MZA),
+#                           ifelse(nchar(as.character(yuc_pop$MZA)) == 2, 
+#                                  paste0("0", MZA), paste0("00", MZA))),
+#          CVEGEO = paste0(CVE_ENT, CVE_MUN, CVE_LOC, CVE_AGEB, CVE_MZA))
+# yuc_pop_cvegeo <- yuc_pop_cvegeo[-c(1:3),]
 
 ## population for all areas of the city (add population numbers to shapefile)
 merida_sf <- yuc_m %>% 
@@ -90,6 +101,41 @@ merida_sf <- yuc_m %>%
 # TIRS data -- all cases
 cases_sf <- cbind(sus, sinave_block[,c("CVEGEO", "CVE_MZA", "CLUSTER", "MZA3X3",
                                        "MZTIRS", "TIRS")])
+
+####################### 
+# population stuff, based on Matt's code
+# (population of clusters only !!!)
+population <- exact_extract(yuc_pop_world, clusters_sf, fun = "sum", # total population?
+                            append_cols = 
+                              c("CLUSTER", "MZTIRS", "TIRS",
+                                "CVEGEO", "CVE_ENT", "CVE_MUN",
+                                "CVE_LOC", "CVE_AGEB", "CVE_MZA")) |> 
+  rename(block_pop = sum)
+
+sum(population$block_pop)
+
+ggplot(yuc_m)+
+  geom_sf()
+
+plot(yuc_pop_world)
+
+# cluster_pops <- yuc_m %>% 
+#   right_join(population, by = c("CVEGEO", "CVE_ENT", "CVE_MUN",
+#                                      "CVE_LOC", "CVE_AGEB", "CVE_MZA"))
+#######
+# population of entire city
+merida_pop <- exact_extract(yuc_pop_world, merida_clean_sf, fun = "sum", # total population?
+                            append_cols = 
+                              c("CVEGEO", "CVE_ENT", "CVE_MUN",
+                                "CVE_LOC", "CVE_AGEB")) |> 
+  rename(block_pop = sum)
+
+sum(merida_pop$block_pop)
+
+clusters_sf
+head(merida_clean_sf)
+
+
 ```
 
 Only confirmed Dengue 2023 cases
@@ -276,6 +322,10 @@ by_age_table1 <- as.data.frame(table1(~ Age + TIRS + Week_onset |
                                                    render.missing = NULL))
 print(xtable(by_age_table1, type = "latex"), 
       file = "by_age_table1.tex")
+
+quantile(denv23$Week_onset) # for IQR
+quantile(adult_denv23$Week_onset)
+quantile(child_denv23$Week_onset)
 ```
 
 # Bar Plot
