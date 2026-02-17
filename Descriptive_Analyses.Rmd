@@ -168,15 +168,16 @@ sinave_all_dengue <- sinave_all_cases %>%
 denv_cases_sf <- cases_sf %>% #674 cases
   filter((str_detect(Diagnosis, "DENV") | str_detect(Diagnosis, "DENGUE"))
          & Year == 2023) %>% # only dengue, only 2023 
-  mutate(age_grp = as.factor(ifelse(Age < 18, "Child", "Adult")),
+  mutate(Age = as.numeric(Age),
+         age_grp = as.factor(ifelse(Age < 18, "Child", "Adult")),
          TIRS = factor(TIRS, levels = c(0, 1), 
                        labels = c("Control", "TIRS Intervention")))
 # only adult cases (< 18)
 denv_adult_cases_sf <- denv_cases_sf %>%
-  filter(Age >= 18)
+  filter(as.numeric(Age) >= 18)
 # child dengue cases
 denv_kid_cases_sf <- denv_cases_sf %>% 
-  filter(Age < 18)
+  filter(as.numeric(Age) < 18)
 ```
 
 Number of dengue cases in 2023: `r nrow(denv_cases_sf)`
@@ -221,8 +222,11 @@ denv_cases_sf$TIRS <- set_label(denv_cases_sf$TIRS, "Trial Arm")
 denv_cases_sf$Week_onset <- set_label(denv_cases_sf$Week_onset, 
                                       "Week of Symptom Onset*")
 
+# some ages are missing (in the age_grp variable)
+denv_cases_na <- drop_na(denv_cases_sf, age_grp)
+
 ## table
-table1_tirs <- table1(~ Age + Week_onset + TIRS | age_grp, data = denv_cases_sf,
+table1_tirs <- table1(~ Age + Week_onset + TIRS | age_grp, data = denv_cases_na,
        render.continuous = c(.= "Mean (SD)", .="Median [Min, Max]",
                              .= "Median (Q1, Q3)"),
        footnote = footnote,
@@ -263,13 +267,38 @@ Population of the city: `r sum(merida_block_sf$POBTOT)`
 Number of dengue cases in trial area: `r nrow(denv_cases_sf) `
 Population of the trial area: `r sum(clusters_sf$POBTOT)`
 
+## population
+```{r}
+merida_block_sf$P_18YMAS <- as.numeric(merida_block_sf$P_18YMAS)
+
+# calculate adult population
+clusters_sf$P_18YMAS <- as.numeric(clusters_sf$P_18YMAS)
+cluster_adult_population <- clusters_sf %>% 
+  group_by(CLUSTER) %>% 
+  summarize(Cluster_Adult_Population = sum(P_18YMAS, na.rm = TRUE)) %>% 
+  st_drop_geometry()
+
+# calculate kid population
+cluster_kid_population <- clusters_sf %>% 
+  group_by(CLUSTER) %>% 
+  summarize(Cluster_Kid_Population = sum(POBTOT) - 
+              sum(P_18YMAS, na.rm = TRUE)) %>% 
+  st_drop_geometry()
+```
+Population of the city: `r sum(merida_block_sf$POBTOT)`
+Population of adults in the city: `r sum(merida_block_sf$P_18YMAS, na.rm = TRUE)`
+Population of kids in the city: `r sum(merida_block_sf$POBTOT) - sum(merida_block_sf$P_18YMAS, na.rm = TRUE)`
+
+Population of the trial area: `r sum(clusters_sf$POBTOT)`
+Population of adults in the trial area: `r sum(cluster_adult_population$Cluster_Adult_Population)`
+Population of kids in the trial area: `r sum(cluster_kid_population$Cluster_Kid_Population)`
 
 # Figures
 ## stacked bar plot
 ```{r}
 # denv_cases_sf is all the confirmed dengue cases within the tirs trial area
 
-ggplot(denv_cases_sf, aes(x = TIRS,fill = age_grp)) +
+ggplot(denv_cases_na, aes(x = TIRS,fill = age_grp)) +
   geom_bar(position = "stack") +
   labs(title = "Dengue cases in 2023 among adults and children, by trial arm",
        x = "Trial Arm",
@@ -338,7 +367,7 @@ ggsave("adult_children_line_rates.pdf")
 ```
 
 # Maps
-## heatmap for number of cases
+## (cluster) heatmap for number of cases
 ```{r}
 # denv_cases_sf is all the confirmed dengue cases within the tirs trial area
 
@@ -355,13 +384,16 @@ clusters_cases <- clusters_sf %>%
 # plot
 ggplot() +
   geom_sf(data = merida_cluster_sf, linewidth = 0.05) +
-  geom_sf(data = clusters_cases, aes(fill = n), color = "white", 
-          linewidth = 0.05) +
+  geom_sf(data = clusters_cases, aes(fill = n, color = n), 
+          linewidth = 0.01) +
   scale_fill_viridis_c(name = "Cases") +
+  scale_color_viridis_c(guide = "none") +
   coord_sf(xlim = c(st_bbox(clusters_sf)$xmin, st_bbox(clusters_sf)$xmax), ## zooom in on cluster area
            ylim = c(st_bbox(clusters_sf)$ymin, st_bbox(clusters_sf)$ymax), 
            expand = FALSE) +
-  theme_minimal()
+  theme_minimal() +
+  labs(title = "Heatmap of number of case counts per cluster")
+ggsave("heatmap_case_counts_cluster.pdf", height = 3)
 ```
 
 ## (cluster) heatmap for cases rate
@@ -380,6 +412,7 @@ block_population <- block_population %>%
 ## add the population to cluster shapefile
 cluster_population$CLUSTER <- as.numeric(cluster_population$CLUSTER)
 block_population$IDMZA <- as.numeric(block_population$IDMZA)
+block_population$CLUSTER <- as.numeric(block_population$CLUSTER)
 clusters_rate <- clusters_cases %>% 
   left_join(cluster_population, by = "CLUSTER") %>% 
   left_join(block_population, by = c("IDMZA", "MZTIRS", "CLUSTER")) %>% 
@@ -389,27 +422,118 @@ clusters_rate <- clusters_cases %>%
 # rate by cluster
 ggplot() +
   geom_sf(data = merida_cluster_sf, linewidth = 0.05) +
-  geom_sf(data = clusters_rate, aes(fill = rate_cluster), color = "white", 
+  geom_sf(data = clusters_rate, aes(fill = rate_cluster, color = rate_cluster),
           linewidth = 0.05) +
   scale_fill_viridis_c(name = "Cases per 1000 people") +
+  scale_color_viridis_c(guide = "none") +
   coord_sf(xlim = c(st_bbox(clusters_sf)$xmin, st_bbox(clusters_sf)$xmax), 
            ylim = c(st_bbox(clusters_sf)$ymin, st_bbox(clusters_sf)$ymax), 
            expand = FALSE) +
-  theme_minimal()
+  theme_minimal() +
+  labs(title = "Heatmap of case rates per cluster")
+ggsave("heatmap_case_rates_cluster.pdf", height = 3)
 ```
 
-## (block) heatmap for cases rate
+## (cluster, adults) heatmap for cases
 ```{r}
+# denv_cases_sf is all the confirmed dengue cases within the tirs trial area
+
+## all adult cases within each cluster
+case_counts_per_cluster_adult <- st_join(denv_adult_cases_sf, clusters_sf, 
+                                         join = st_within) %>% 
+  st_drop_geometry() %>% 
+  count(CLUSTER.x)
+
+## add the case counts to cluster shapefile
+clusters_adult_cases <- clusters_sf %>% 
+  left_join(case_counts_per_cluster_adult, by = c("CLUSTER" = "CLUSTER.x"))
+
+# plot
 ggplot() +
   geom_sf(data = merida_cluster_sf, linewidth = 0.05) +
-  geom_sf(data = clusters_rate, aes(fill = rate_block), color = "white", 
-          linewidth = 0.05) +
-  scale_fill_viridis_c(name = "Cases per 1000 people") +
-  coord_sf(xlim = c(st_bbox(clusters_sf)$xmin, st_bbox(clusters_sf)$xmax), 
+  geom_sf(data = clusters_adult_cases, aes(fill = n, color = n), 
+          linewidth = 0.01) +
+  scale_fill_viridis_c(name = "Cases") +
+  scale_color_viridis_c(guide = "none") +
+  coord_sf(xlim = c(st_bbox(clusters_sf)$xmin, st_bbox(clusters_sf)$xmax), ## zooom in on cluster area
            ylim = c(st_bbox(clusters_sf)$ymin, st_bbox(clusters_sf)$ymax), 
            expand = FALSE) +
-  theme_minimal()
+  theme_minimal() +
+  labs(title = "Heatmap of number of adult case counts per cluster")
 ```
-okay this is nothing
 
+## (cluster, adults) heatmap for rates
+```{r}
+## add the population to cluster shapefile
+cluster_adult_population$CLUSTER <- as.numeric(cluster_adult_population$CLUSTER)
+clusters_adult_rate <- clusters_adult_cases %>% 
+  left_join(cluster_adult_population, by = "CLUSTER") %>% 
+  mutate(adult_rate_cluster = (n/Cluster_Adult_Population) * 1000)
 
+# plot
+ggplot() +
+  geom_sf(data = merida_cluster_sf, linewidth = 0.05) +
+  geom_sf(data = clusters_adult_rate, aes(fill = adult_rate_cluster, 
+                                          color = adult_rate_cluster), 
+          linewidth = 0.01) +
+  scale_fill_viridis_c(name = "Cases per 1000 people") +
+  scale_color_viridis_c(guide = "none") +
+  coord_sf(xlim = c(st_bbox(clusters_sf)$xmin, st_bbox(clusters_sf)$xmax), ## zooom in on cluster area
+           ylim = c(st_bbox(clusters_sf)$ymin, st_bbox(clusters_sf)$ymax), 
+           expand = FALSE) +
+  theme_minimal() +
+  labs(title = "Heatmap of adult case rates per cluster")
+ggsave("heatmap_case_rates_cluster_adult.pdf", height = 3)
+```
+
+## (cluster, children) heatmap for cases
+```{r}
+# denv_cases_sf is all the confirmed dengue cases within the tirs trial area
+
+## all adult cases within each cluster
+case_counts_per_cluster_kid <- st_join(denv_kid_cases_sf, clusters_sf, 
+                                         join = st_within) %>% 
+  st_drop_geometry() %>% 
+  count(CLUSTER.x)
+
+## add the case counts to cluster shapefile
+clusters_kid_cases <- clusters_sf %>% 
+  left_join(case_counts_per_cluster_kid, by = c("CLUSTER" = "CLUSTER.x"))
+
+# plot
+ggplot() +
+  geom_sf(data = merida_cluster_sf, linewidth = 0.05) +
+  geom_sf(data = clusters_kid_cases, aes(fill = n, color = n), 
+          linewidth = 0.01) +
+  scale_fill_viridis_c(name = "Cases") +
+  scale_color_viridis_c(guide = "none") +
+  coord_sf(xlim = c(st_bbox(clusters_sf)$xmin, st_bbox(clusters_sf)$xmax), ## zooom in on cluster area
+           ylim = c(st_bbox(clusters_sf)$ymin, st_bbox(clusters_sf)$ymax), 
+           expand = FALSE) +
+  theme_minimal() +
+  labs(title = "Heatmap of number of child case counts per cluster")
+```
+
+## (cluster, children) heatmap for rates
+```{r}
+## add the population to cluster shapefile
+cluster_kid_population$CLUSTER <- as.numeric(cluster_kid_population$CLUSTER)
+clusters_kid_rate <- clusters_kid_cases %>% 
+  left_join(cluster_kid_population, by = "CLUSTER") %>% 
+  mutate(kid_rate_cluster = (n/Cluster_Kid_Population) * 1000)
+
+# plot
+ggplot() +
+  geom_sf(data = merida_cluster_sf, linewidth = 0.05) +
+  geom_sf(data = clusters_kid_rate, aes(fill = kid_rate_cluster, 
+                                          color = kid_rate_cluster), 
+          linewidth = 0.01) +
+  scale_fill_viridis_c(name = "Cases per 1000 people") +
+  scale_color_viridis_c(guide = "none") +
+  coord_sf(xlim = c(st_bbox(clusters_sf)$xmin, st_bbox(clusters_sf)$xmax), ## zooom in on cluster area
+           ylim = c(st_bbox(clusters_sf)$ymin, st_bbox(clusters_sf)$ymax), 
+           expand = FALSE) +
+  theme_minimal() +
+  labs(title = "Heatmap of child case rates per cluster")
+ggsave("heatmap_case_rates_cluster_kid.pdf", height = 3)
+```
