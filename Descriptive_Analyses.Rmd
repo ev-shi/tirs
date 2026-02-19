@@ -68,6 +68,11 @@ cases_tirs_info <- read_csv("data/TIRS_SINAVE_combined22_23_blockID.csv")
 clusters_sf <- st_read(dsn = here("data"),
                     layer = "Cluster final 2021 actualizado")
 
+## entomological data
+ento <- here::here("data", "TIRS_database_entom_summ.csv") %>%
+  rio::import() %>% 
+  dplyr::as_tibble()
+
 # make sure all sf files have the same coordinates 
 merida_cluster_sf <- st_transform(merida_cluster_sf, st_crs(merida_block_sf))
 cases_sf <- st_transform(cases_sf, st_crs(merida_block_sf))
@@ -85,6 +90,7 @@ clusters_sf <- st_transform(clusters_sf, st_crs(merida_block_sf))
 #   geom_sf(data = clusters_sf, color = "blue", linewidth = 0.05)
 # ggsave("are_TIRS_blocks_and_SINAVE_MZA_the_same.pdf")
 ```
+
 
 ## Some Cleaning
 ### update shapefiles 
@@ -149,6 +155,21 @@ cases_sf <- cbind(cases_sf, cases_tirs_info[,c("CVEGEO", "CVE_MZA", "CLUSTER",
 # head(merida_clean_sf)
 ```
 
+### fix tirs assignment
+cluster 61 has some blocks listed as 0 despite the rest of the block as 1
+assuming data entry error?
+```{r}
+clusters_sf <- clusters_sf %>% 
+  mutate(trial_arm = ifelse(CLUSTER == "61", 1, TIRS))
+```
+
+# some missing values for population?
+```{r}
+yuc_pop %>% 
+  filter(POBTOT == 0 | is.na(POBTOT))
+```
+
+
 ### dengue 2023 cases only
 ```{r}
 # select cases of all the CONFIRMED 2023 dengue cases
@@ -172,10 +193,10 @@ denv_cases_sf <- cases_sf %>% #674 cases
          age_grp = as.factor(ifelse(Age < 18, "Child", "Adult")),
          TIRS = factor(TIRS, levels = c(0, 1), 
                        labels = c("Control", "TIRS Intervention")))
-# only adult cases (< 18)
+# only adult cases (< 18); 268 cases
 denv_adult_cases_sf <- denv_cases_sf %>%
   filter(as.numeric(Age) >= 18)
-# child dengue cases
+# child dengue cases; 345 cases
 denv_kid_cases_sf <- denv_cases_sf %>% 
   filter(as.numeric(Age) < 18)
 ```
@@ -343,11 +364,11 @@ ggsave("adult_children_line.pdf")
 # change to rates
 ## i'm assuming the denominator stays the same over time?
 ## looking at those in the trial area
-## ok why am i looking at rate
+## divide by population of adults/kids respectively
 denv_adult_rates <- denv_adult_counts %>%
-  mutate(rate = (n/sum(clusters_sf$POBTOT))*100000)
+  mutate(rate = (n/sum(cluster_adult_population$Cluster_Adult_Population))*100000)
 denv_kid_rates <- denv_kid_counts %>%
-  mutate(rate = (n/sum(clusters_sf$POBTOT))*100000)
+  mutate(rate = (n/sum(cluster_kid_population$Cluster_Kid_Population))*100000)
 
 ## plot
 ggplot() +
@@ -383,17 +404,23 @@ clusters_cases <- clusters_sf %>%
 
 # plot
 ggplot() +
-  geom_sf(data = merida_cluster_sf, linewidth = 0.05) +
+  geom_sf(data = merida_cluster_sf, fill = "white", linewidth = 0.05) +
   geom_sf(data = clusters_cases, aes(fill = n, color = n), 
           linewidth = 0.01) +
-  scale_fill_viridis_c(name = "Cases") +
-  scale_color_viridis_c(guide = "none") +
+  scale_fill_gradient(
+    low = "#deebf7",
+    high = "#041c3a",
+    name = "Cases") +
+  scale_color_gradient(
+    low = "#deebf7",
+    high = "#041c3a",
+    guide = "none") +
   coord_sf(xlim = c(st_bbox(clusters_sf)$xmin, st_bbox(clusters_sf)$xmax), ## zooom in on cluster area
            ylim = c(st_bbox(clusters_sf)$ymin, st_bbox(clusters_sf)$ymax), 
            expand = FALSE) +
   theme_minimal() +
   labs(title = "Heatmap of number of case counts per cluster")
-ggsave("heatmap_case_counts_cluster.pdf", height = 3)
+ggsave("heatmap_case_counts_cluster_monochrome.pdf", height = 3)
 ```
 
 ## (cluster) heatmap for cases rate
@@ -421,11 +448,19 @@ clusters_rate <- clusters_cases %>%
 
 # rate by cluster
 ggplot() +
-  geom_sf(data = merida_cluster_sf, linewidth = 0.05) +
+  geom_sf(data = merida_cluster_sf, fill = "white", linewidth = 0.05) +
   geom_sf(data = clusters_rate, aes(fill = rate_cluster, color = rate_cluster),
           linewidth = 0.05) +
-  scale_fill_viridis_c(name = "Cases per 1000 people") +
-  scale_color_viridis_c(guide = "none") +
+  scale_fill_gradient(
+    low = "#deebf7",
+    high = "#041c3a",
+    name = "Cases") +
+  scale_color_gradient(
+    low = "#deebf7",
+    high = "#041c3a",
+    guide = "none") +
+  # scale_fill_viridis_c(name = "Cases per 1000 people") +
+  # scale_color_viridis_c(guide = "none") +
   coord_sf(xlim = c(st_bbox(clusters_sf)$xmin, st_bbox(clusters_sf)$xmax), 
            ylim = c(st_bbox(clusters_sf)$ymin, st_bbox(clusters_sf)$ymax), 
            expand = FALSE) +
@@ -450,11 +485,19 @@ clusters_adult_cases <- clusters_sf %>%
 
 # plot
 ggplot() +
-  geom_sf(data = merida_cluster_sf, linewidth = 0.05) +
+  geom_sf(data = merida_cluster_sf, fill = "white", linewidth = 0.05) +
   geom_sf(data = clusters_adult_cases, aes(fill = n, color = n), 
           linewidth = 0.01) +
-  scale_fill_viridis_c(name = "Cases") +
-  scale_color_viridis_c(guide = "none") +
+  scale_fill_gradient(
+    low = "#deebf7",
+    high = "#041c3a",
+    name = "Cases") +
+  scale_color_gradient(
+    low = "#deebf7",
+    high = "#041c3a",
+    guide = "none") +
+  # scale_fill_viridis_c(name = "Cases") +
+  # scale_color_viridis_c(guide = "none") +
   coord_sf(xlim = c(st_bbox(clusters_sf)$xmin, st_bbox(clusters_sf)$xmax), ## zooom in on cluster area
            ylim = c(st_bbox(clusters_sf)$ymin, st_bbox(clusters_sf)$ymax), 
            expand = FALSE) +
@@ -472,12 +515,20 @@ clusters_adult_rate <- clusters_adult_cases %>%
 
 # plot
 ggplot() +
-  geom_sf(data = merida_cluster_sf, linewidth = 0.05) +
+  geom_sf(data = merida_cluster_sf, fill = "white", linewidth = 0.05) +
   geom_sf(data = clusters_adult_rate, aes(fill = adult_rate_cluster, 
                                           color = adult_rate_cluster), 
           linewidth = 0.01) +
-  scale_fill_viridis_c(name = "Cases per 1000 people") +
-  scale_color_viridis_c(guide = "none") +
+  scale_fill_gradient(
+    low = "#deebf7",
+    high = "#041c3a",
+    name = "Cases") +
+  scale_color_gradient(
+    low = "#deebf7",
+    high = "#041c3a",
+    guide = "none") +
+  # scale_fill_viridis_c(name = "Cases per 1000 people") +
+  # scale_color_viridis_c(guide = "none") +
   coord_sf(xlim = c(st_bbox(clusters_sf)$xmin, st_bbox(clusters_sf)$xmax), ## zooom in on cluster area
            ylim = c(st_bbox(clusters_sf)$ymin, st_bbox(clusters_sf)$ymax), 
            expand = FALSE) +
@@ -502,11 +553,19 @@ clusters_kid_cases <- clusters_sf %>%
 
 # plot
 ggplot() +
-  geom_sf(data = merida_cluster_sf, linewidth = 0.05) +
+  geom_sf(data = merida_cluster_sf, fill = "white", linewidth = 0.05) +
   geom_sf(data = clusters_kid_cases, aes(fill = n, color = n), 
           linewidth = 0.01) +
-  scale_fill_viridis_c(name = "Cases") +
-  scale_color_viridis_c(guide = "none") +
+  scale_fill_gradient(
+    low = "#deebf7",
+    high = "#041c3a",
+    name = "Cases") +
+  scale_color_gradient(
+    low = "#deebf7",
+    high = "#041c3a",
+    guide = "none") +
+  # scale_fill_viridis_c(name = "Cases") +
+  # scale_color_viridis_c(guide = "none") +
   coord_sf(xlim = c(st_bbox(clusters_sf)$xmin, st_bbox(clusters_sf)$xmax), ## zooom in on cluster area
            ylim = c(st_bbox(clusters_sf)$ymin, st_bbox(clusters_sf)$ymax), 
            expand = FALSE) +
@@ -524,12 +583,20 @@ clusters_kid_rate <- clusters_kid_cases %>%
 
 # plot
 ggplot() +
-  geom_sf(data = merida_cluster_sf, linewidth = 0.05) +
+  geom_sf(data = merida_cluster_sf, fill = "white", linewidth = 0.05) +
   geom_sf(data = clusters_kid_rate, aes(fill = kid_rate_cluster, 
                                           color = kid_rate_cluster), 
           linewidth = 0.01) +
-  scale_fill_viridis_c(name = "Cases per 1000 people") +
-  scale_color_viridis_c(guide = "none") +
+  scale_fill_gradient(
+    low = "#deebf7",
+    high = "#041c3a",
+    name = "Cases") +
+  scale_color_gradient(
+    low = "#deebf7",
+    high = "#041c3a",
+    guide = "none") +
+  # scale_fill_viridis_c(name = "Cases per 1000 people") +
+  # scale_color_viridis_c(guide = "none") +
   coord_sf(xlim = c(st_bbox(clusters_sf)$xmin, st_bbox(clusters_sf)$xmax), ## zooom in on cluster area
            ylim = c(st_bbox(clusters_sf)$ymin, st_bbox(clusters_sf)$ymax), 
            expand = FALSE) +
@@ -537,3 +604,127 @@ ggplot() +
   labs(title = "Heatmap of child case rates per cluster")
 ggsave("heatmap_case_rates_cluster_kid.pdf", height = 3)
 ```
+
+## entomological data
+```{r}
+# mosquito counts by cluster
+mosq_counts <- ento %>% 
+  group_by(id_cluster) %>% 
+  summarize(ae_fem_total = sum(`Sum of ae_fem`))
+mosq_counts <- mosq_counts[-1,]
+
+## add the mosquito counts to cluster shapefile
+mosq_counts$id_cluster <- as.numeric(mosq_counts$id_cluster)
+clusters_sf <- clusters_sf %>% 
+  left_join(mosq_counts, by = c("CLUSTER" = "id_cluster"))
+
+# plot
+ggplot() +
+  geom_sf(data = merida_cluster_sf, fill = "white", linewidth = 0.05) +
+  geom_sf(data = clusters_sf, aes(fill = ae_fem_total, 
+                                  color = ae_fem_total), linewidth = 0.01) +
+  scale_fill_gradient(
+    low = "#deebf7",
+    high = "#041c3a",
+    name = "Mosquito Count") +
+  scale_color_gradient(
+    low = "#deebf7",
+    high = "#041c3a",
+    guide = "none") +
+  # scale_fill_viridis_c(name = "Mosquito Count") +
+  # scale_color_viridis_c(guide = "none") +
+  coord_sf(xlim = c(st_bbox(clusters_sf)$xmin, st_bbox(clusters_sf)$xmax),
+           ylim = c(st_bbox(clusters_sf)$ymin, st_bbox(clusters_sf)$ymax), 
+           expand = FALSE) +
+  theme_minimal() +
+  labs(title = "Mosquito Counts per Cluster")
+ggsave("heatmap_mosquito_count.pdf", height = 3)
+```
+
+
+## trial arm
+```{r}
+ggplot() +
+  geom_sf(data = merida_cluster_sf, fill = "white", linewidth = 0.05) +
+  geom_sf(data = clusters_sf, linewidth = 0.05, aes(fill = as.factor(trial_arm),
+                                                    color = as.factor(trial_arm)),
+          alpha = 0.85) +
+  scale_fill_manual(values = c("tomato", "darkolivegreen3"), 
+                    name = "TIRS Trial Arm", labels = c("Control", 
+                                                        "Intervention")) +
+  scale_color_manual(values = c("tomato", "darkolivegreen3"),
+                     guide = "none") +  
+  coord_sf(xlim = c(st_bbox(clusters_sf)$xmin, st_bbox(clusters_sf)$xmax), ## zooom in on cluster area
+           ylim = c(st_bbox(clusters_sf)$ymin, st_bbox(clusters_sf)$ymax), 
+           expand = FALSE) +
+  theme_minimal() +
+  labs(title = "Cluster by Trial Arm")
+ggsave("cluster_trial_arms.pdf", height = 3)
+```
+
+# Regression and ICC
+```{r}
+# dataset for the model
+## number of cases per block/cluster
+reg_dat <- denv_cases_sf %>% 
+  count(CLUSTER, MZTIRS, name = "num_cases_total") %>% 
+  st_drop_geometry()
+adult_cases <- denv_adult_cases_sf %>% 
+  count(CLUSTER, MZTIRS, name = "num_cases_adult") %>% 
+  st_drop_geometry()
+child_cases <- denv_kid_cases_sf %>% 
+  count(CLUSTER, MZTIRS, name = "num_cases_kids") %>% 
+  st_drop_geometry()
+
+reg_dat <- reg_dat %>% 
+  left_join(adult_cases, by = c("CLUSTER", "MZTIRS")) %>% 
+  left_join(child_cases, by = c("CLUSTER", "MZTIRS")) %>% 
+  mutate(num_cases_adult = ifelse(is.na(num_cases_adult), 0, num_cases_adult),
+         num_cases_kids = ifelse(is.na(num_cases_kids), 0, num_cases_kids))
+
+## number for total population
+clbl_adult_pop <- clusters_sf %>% 
+  group_by(CLUSTER, MZTIRS) %>% 
+  summarize(Block_Adult_Pop = sum(P_18YMAS, na.rm = TRUE)) %>% 
+  st_drop_geometry()
+clbl_kid_pop <- clusters_sf %>% 
+  group_by(CLUSTER, MZTIRS) %>% 
+  summarize(Block_Child_Pop = sum(POBTOT, na.rm = TRUE) - 
+              sum(P_18YMAS, na.rm = TRUE)) %>% 
+  st_drop_geometry()
+clbl_total_pop <- clusters_sf %>% 
+  group_by(CLUSTER, MZTIRS) %>% 
+  summarize(Block_Pop = sum(POBTOT, na.rm = TRUE)) %>% 
+  st_drop_geometry()
+
+trial_arm <- clusters_sf %>% 
+  group_by(CLUSTER, MZTIRS) %>% 
+  summarize(trial_arm = mean(trial_arm)) %>% 
+  st_drop_geometry()
+
+reg_dat <- reg_dat %>% 
+  left_join(clbl_adult_pop, by = c("CLUSTER", "MZTIRS")) %>% 
+  left_join(clbl_kid_pop, by = c("CLUSTER", "MZTIRS")) %>% 
+  left_join(clbl_total_pop, by = c("CLUSTER", "MZTIRS")) %>% 
+  left_join(trial_arm, by = c("CLUSTER", "MZTIRS")) %>% 
+  mutate(num_cases_total = ifelse(is.na(num_cases_total), 0, num_cases_total),
+         noncases_total = Block_Pop - num_cases_total,
+         noncases_adult = Block_Adult_Pop - num_cases_adult,
+         noncases_kids = Block_Child_Pop - num_cases_kids)
+
+# i don't have block population for every single block
+# for now...take median of surrounding areas (cluster)?
+test_pop <- clusters_sf %>% 
+  group_by(CLUSTER) %>% 
+  mutate(population = if_else(POBTOT == 0, median(POBTOT[POBTOT > 0]), POBTOT),
+         adult_pop = ifelse(P_18YMAS == 0, median(P_18YMAS[P_18YMAS > 0]), 
+                            P_18YMAS)) %>% 
+  ungroup() %>% 
+  st_drop_geometry() %>% 
+  dplyr::select(CLUSTER, MZTIRS, population, adult_pop)
+
+fit <- glmer(cbind(num_cases_total, noncases_total) ~ 1 + (1 | CLUSTER/MZTIRS),
+             family = "binomial",
+             data = reg_dat)
+```
+
