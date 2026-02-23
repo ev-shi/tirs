@@ -30,7 +30,8 @@ pacman::p_load(sf, # spatial
                lme4,
                terra,
                raster,
-               exactextractr
+               exactextractr,
+               MuMIn # calculate icc
                )
 ```
 
@@ -166,7 +167,7 @@ clusters_sf <- clusters_sf %>%
 # some missing values for population?
 ```{r}
 yuc_pop %>% 
-  filter(POBTOT == 0 | is.na(POBTOT))
+  filter(POBTOT == 0 | is.na(POBTOT)) # check gmaps
 ```
 
 
@@ -666,7 +667,7 @@ ggsave("cluster_trial_arms.pdf", height = 3)
 ```{r}
 # dataset for the model
 ## number of cases per block/cluster
-reg_dat <- denv_cases_sf %>% 
+reg_dat_orig <- denv_cases_sf %>% 
   count(CLUSTER, MZTIRS, name = "num_cases_total") %>% 
   st_drop_geometry()
 adult_cases <- denv_adult_cases_sf %>% 
@@ -676,55 +677,157 @@ child_cases <- denv_kid_cases_sf %>%
   count(CLUSTER, MZTIRS, name = "num_cases_kids") %>% 
   st_drop_geometry()
 
-reg_dat <- reg_dat %>% 
+## trial arm info
+trial_arm <- clusters_sf %>% 
+  group_by(CLUSTER, MZTIRS) %>% 
+  summarize(trial_arm = mean(trial_arm)) %>% 
+  st_drop_geometry()
+
+reg_dat <- reg_dat_orig %>% 
+  right_join(trial_arm, by = c("CLUSTER", "MZTIRS")) %>% 
   left_join(adult_cases, by = c("CLUSTER", "MZTIRS")) %>% 
   left_join(child_cases, by = c("CLUSTER", "MZTIRS")) %>% 
   mutate(num_cases_adult = ifelse(is.na(num_cases_adult), 0, num_cases_adult),
          num_cases_kids = ifelse(is.na(num_cases_kids), 0, num_cases_kids))
 
 ## number for total population
-clbl_adult_pop <- clusters_sf %>% 
-  group_by(CLUSTER, MZTIRS) %>% 
-  summarize(Block_Adult_Pop = sum(P_18YMAS, na.rm = TRUE)) %>% 
-  st_drop_geometry()
-clbl_kid_pop <- clusters_sf %>% 
-  group_by(CLUSTER, MZTIRS) %>% 
-  summarize(Block_Child_Pop = sum(POBTOT, na.rm = TRUE) - 
-              sum(P_18YMAS, na.rm = TRUE)) %>% 
-  st_drop_geometry()
-clbl_total_pop <- clusters_sf %>% 
-  group_by(CLUSTER, MZTIRS) %>% 
-  summarize(Block_Pop = sum(POBTOT, na.rm = TRUE)) %>% 
-  st_drop_geometry()
-
-trial_arm <- clusters_sf %>% 
-  group_by(CLUSTER, MZTIRS) %>% 
-  summarize(trial_arm = mean(trial_arm)) %>% 
-  st_drop_geometry()
-
-reg_dat <- reg_dat %>% 
-  left_join(clbl_adult_pop, by = c("CLUSTER", "MZTIRS")) %>% 
-  left_join(clbl_kid_pop, by = c("CLUSTER", "MZTIRS")) %>% 
-  left_join(clbl_total_pop, by = c("CLUSTER", "MZTIRS")) %>% 
-  left_join(trial_arm, by = c("CLUSTER", "MZTIRS")) %>% 
-  mutate(num_cases_total = ifelse(is.na(num_cases_total), 0, num_cases_total),
-         noncases_total = Block_Pop - num_cases_total,
-         noncases_adult = Block_Adult_Pop - num_cases_adult,
-         noncases_kids = Block_Child_Pop - num_cases_kids)
+# clbl_adult_pop <- clusters_sf %>% 
+#   group_by(CLUSTER, MZTIRS) %>% 
+#   summarize(Block_Adult_Pop = sum(P_18YMAS, na.rm = TRUE)) %>% 
+#   st_drop_geometry()
+# clbl_kid_pop <- clusters_sf %>% 
+#   group_by(CLUSTER, MZTIRS) %>% 
+#   summarize(Block_Child_Pop = sum(POBTOT, na.rm = TRUE) - 
+#               sum(P_18YMAS, na.rm = TRUE)) %>% 
+#   st_drop_geometry()
+# clbl_total_pop <- clusters_sf %>% 
+#   group_by(CLUSTER, MZTIRS) %>% 
+#   summarize(Block_Pop = sum(POBTOT, na.rm = TRUE)) %>% 
+#   st_drop_geometry()
 
 # i don't have block population for every single block
 # for now...take median of surrounding areas (cluster)?
 test_pop <- clusters_sf %>% 
   group_by(CLUSTER) %>% 
   mutate(population = if_else(POBTOT == 0, median(POBTOT[POBTOT > 0]), POBTOT),
-         adult_pop = ifelse(P_18YMAS == 0, median(P_18YMAS[P_18YMAS > 0]), 
-                            P_18YMAS)) %>% 
+         adult_pop = ifelse(P_18YMAS == 0 | is.na(P_18YMAS), 
+                            floor(median(P_18YMAS[P_18YMAS > 0], na.rm = TRUE)), 
+                            P_18YMAS),
+         adult_pop = ifelse(population < adult_pop, population, # - 2 for child population? 
+                            adult_pop)) %>% 
   ungroup() %>% 
   st_drop_geometry() %>% 
   dplyr::select(CLUSTER, MZTIRS, population, adult_pop)
 
-fit <- glmer(cbind(num_cases_total, noncases_total) ~ 1 + (1 | CLUSTER/MZTIRS),
-             family = "binomial",
-             data = reg_dat)
+# ## any cases where the adult population is greater than the actual population?
+# test_pop %>% filter(adult_pop > population)
+
+reg_dat <- reg_dat %>% 
+  left_join(test_pop, by = c("CLUSTER", "MZTIRS")) %>% 
+  mutate(num_cases_total = ifelse(is.na(num_cases_total), 0, num_cases_total),
+         num_cases_adult = ifelse(is.na(num_cases_adult), 0, num_cases_adult),
+         num_cases_kids = ifelse(is.na(num_cases_kids), 0, num_cases_kids),
+         child_pop = population - adult_pop,
+         num_cases_total = ifelse(is.na(num_cases_total), 0, num_cases_total),
+         noncases_total = population - num_cases_total,
+         noncases_adult = adult_pop - num_cases_adult,
+         noncases_kids = child_pop - num_cases_kids) %>% 
+  filter(MZTIRS != 0) %>% 
+  filter(num_cases_kids <= child_pop)
+
+# ## any cases where there are more cases than population?
+reg_dat %>% filter(num_cases_total > population)
+reg_dat %>% filter(num_cases_adult > adult_pop)
+reg_dat %>% filter(num_cases_kids > child_pop)
+
+# some missing population, i.e., sum(is.na(population)) > 0
+
+fit <- glmer(
+  cbind(num_cases_total, noncases_total) ~ trial_arm + (1 | CLUSTER/MZTIRS),
+  family = "binomial", 
+  data = reg_dat)
+summary(fit)
+exp(fixef(fit))
+VarCorr(fit)
+```
+
+
+```{r}
+dat_adult <- data.frame(dengue_case = c(),
+                      trial_arm = c(),
+                      cluster = c(),
+                      block = c(),
+                      age_group = c())
+for (row in 1:nrow(reg_dat)) {
+  num_cases_adult = reg_dat$num_cases_adult[row]
+  noncases_adult = reg_dat$adult_pop[row] - reg_dat$num_cases_adult[row]
+  df_temp = data.frame(dengue_case = rep(1, num_cases_adult),
+                       cluster = rep(reg_dat$CLUSTER[row],num_cases_adult),
+                       block = rep(reg_dat$MZTIRS[row],num_cases_adult),
+                       age_group = rep(1,num_cases_adult),
+                       trial_arm = rep(reg_dat$trial_arm[row],num_cases_adult))
+  dat_adult = rbind(dat_adult,df_temp)
+  df_temp = data.frame(dengue_case = rep(0, noncases_adult),
+                       cluster = rep(reg_dat$CLUSTER[row],noncases_adult),
+                       block = rep(reg_dat$MZTIRS[row],noncases_adult),
+                       age_group = rep(1,noncases_adult),
+                       trial_arm = rep(reg_dat$trial_arm[row],noncases_adult))
+  dat_adult = rbind(dat_adult,df_temp)
+}
+
+dat_kids <- data.frame(dengue_case = c(),
+                      trial_arm = c(),
+                      cluster = c(),
+                      block = c(),
+                      age_group = c())
+for (row in 1:nrow(reg_dat)) {
+  num_cases_kids = reg_dat$num_cases_kids[row]
+  noncases_kids = reg_dat$child_pop[row] - reg_dat$num_cases_kids[row]
+  df_temp = data.frame(dengue_case = rep(1, num_cases_kids),
+                       cluster = rep(reg_dat$CLUSTER[row],num_cases_kids),
+                       block = rep(reg_dat$MZTIRS[row],num_cases_kids),
+                       age_group = rep(0,num_cases_kids),
+                       trial_arm = rep(reg_dat$trial_arm[row],num_cases_kids))
+  dat_kids = rbind(dat_kids,df_temp)
+  df_temp = data.frame(dengue_case = rep(0, noncases_kids),
+                       cluster = rep(reg_dat$CLUSTER[row],noncases_kids),
+                       block = rep(reg_dat$MZTIRS[row],noncases_kids),
+                       age_group = rep(0,noncases_kids),
+                       trial_arm = rep(reg_dat$trial_arm[row],noncases_kids))
+  dat_kids = rbind(dat_kids,df_temp)
+}
+
+dat_total <- rbind(dat_adult, dat_kids)
+
+fit <- glmer(
+  dengue_case ~ trial_arm + (1 | cluster/block),
+  family = "binomial", 
+  data = dat_total)
+summary(fit)
+
+test <- glmer(
+  dengue_case ~ trial_arm + (1 | cluster),
+  family = "binomial", 
+  data = dat_total)
+summary(test)
+```
+
+
+## adults only
+```{r}
+fit_adults <- glmer(
+  dengue_case ~ trial_arm + (1 | cluster/block),
+  family = "binomial", 
+  data = )
+summary(fit_adults)
+```
+
+## children only
+```{r}
+fit_kids <- glmer(
+  dengue_case ~ trial_arm + (1 | cluster/block),
+  family = "binomial", 
+  data = dat_kids)
+summary(fit_kids)
 ```
 
