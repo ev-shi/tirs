@@ -315,6 +315,78 @@ Population of the trial area: `r sum(clusters_sf$POBTOT)`
 Population of adults in the trial area: `r sum(cluster_adult_population$Cluster_Adult_Population)`
 Population of kids in the trial area: `r sum(cluster_kid_population$Cluster_Kid_Population)`
 
+## dengue cases and mosquitoes
+```{r}
+# mosquito counts by cluster
+mosq_counts <- ento %>% 
+  group_by(id_cluster) %>% 
+  summarize(ae_fem_total = sum(`Sum of ae_fem`))
+mosq_counts <- mosq_counts[-1,]
+mosq_counts$id_cluster <- as.numeric(mosq_counts$id_cluster)
+
+# cluster trial arm
+cluster_assignment <- clusters_sf %>% 
+  group_by(CLUSTER) %>% 
+  summarize(trial_arm = round(mean(TIRS), 0)) %>% 
+  st_drop_geometry()
+
+# bind mosquito counts and trial arm
+cluster_assignment$CLUSTER <- as.numeric(cluster_assignment$CLUSTER)
+mosq_counts <- mosq_counts %>% 
+  left_join(cluster_assignment, by = c("id_cluster" = "CLUSTER"))
+
+# denv_cases_sf is all the confirmed dengue cases within the tirs trial area
+
+## all cases (kids and adults) within each cluster
+case_counts_per_cluster_all <- st_join(denv_cases_sf, clusters_sf, join = st_within) %>% 
+  st_drop_geometry() %>% 
+  count(CLUSTER.x) %>% 
+  rename(CLUSTER = CLUSTER.x,
+         num_denv_cases = n)
+
+# denv_cases_sf is all the confirmed dengue cases within the tirs trial area
+# case_counts_per_cluster_all is all cases (kids and adults) within each cluster
+
+# cluster_population is all people in a cluster,
+#   respectively
+cluster_population <- cluster_population %>% 
+  st_drop_geometry()
+
+## add the population to cluster shapefile
+cluster_population$CLUSTER <- as.numeric(cluster_population$CLUSTER)
+block_population$CLUSTER <- as.numeric(block_population$CLUSTER)
+cases_by_trial_arm <- case_counts_per_cluster_all %>% 
+  left_join(cluster_population, by = "CLUSTER") %>% 
+  left_join(mosq_counts, by = c("CLUSTER" = "id_cluster")) %>% 
+  mutate(rate_cluster = (num_denv_cases / Cluster_Population) * 1000)
+
+
+## formatting
+cases_by_trial_arm$num_denv_cases <- setLabel(cases_by_trial_arm$num_denv_cases, "No. DENV Cases in Cluster")
+cases_by_trial_arm$Cluster_Population <- setLabel(cases_by_trial_arm$Cluster_Population, "Population of Cluster")
+cases_by_trial_arm$rate_cluster <- setLabel(cases_by_trial_arm$rate_cluster, "Cases per 1,000 People in A Cluster")
+cases_by_trial_arm$ae_fem_total <- set_label(cases_by_trial_arm$ae_fem_total, "Total Adult Female <i>Aedes Agypti</i> per Cluster")
+cases_by_trial_arm$trial_arm <- 
+  factor(cases_by_trial_arm$trial_arm, levels = c(0, 1),
+         labels = c("Control", "TIRS Intervention"))
+cases_by_trial_arm$trial_arm <- setLabel(cases_by_trial_arm$trial_arm, "Trial Arm")
+
+
+
+table1_mosquitoes <- as.data.frame(table1(~ num_denv_cases + Cluster_Population 
+                                          + rate_cluster + ae_fem_total | 
+                                            trial_arm, 
+                                          data = cases_by_trial_arm, 
+                                          render.continuous = c(.= "Mean (SD)", 
+                                                                .="Median [Min, Max]",
+                                                                .= "Median (Q1, Q3)")))
+
+## print table
+print(xtable(table1_mosquitoes, type = "latex"), file = "table1_mosquitoes.tex",
+      include.rownames=FALSE)
+```
+
+
 # Figures
 ## stacked bar plot
 ```{r}
@@ -391,22 +463,16 @@ ggsave("adult_children_line_rates.pdf")
 # Maps
 ## (cluster) heatmap for number of cases
 ```{r}
-# denv_cases_sf is all the confirmed dengue cases within the tirs trial area
-
-## all cases (kids and adults) within each cluster
-case_counts_per_cluster_all <- st_join(denv_cases_sf, clusters_sf, join = st_within) %>% 
-  st_drop_geometry() %>% 
-  count(CLUSTER.x)
-
 ## add the case counts to cluster shapefile
 clusters_sf$CLUSTER <- as.numeric(clusters_sf$CLUSTER)
 clusters_cases <- clusters_sf %>% 
-  left_join(case_counts_per_cluster_all, by = c("CLUSTER" = "CLUSTER.x"))
+  left_join(case_counts_per_cluster_all, by = "CLUSTER")
 
 # plot
 ggplot() +
   geom_sf(data = merida_cluster_sf, fill = "white", linewidth = 0.05) +
-  geom_sf(data = clusters_cases, aes(fill = n, color = n), 
+  geom_sf(data = clusters_cases, aes(fill = num_denv_cases, 
+                                     color = num_denv_cases), 
           linewidth = 0.01) +
   scale_fill_gradient(
     low = "#deebf7",
@@ -426,26 +492,17 @@ ggsave("heatmap_case_counts_cluster_monochrome.pdf", height = 3)
 
 ## (cluster) heatmap for cases rate
 ```{r}
-# denv_cases_sf is all the confirmed dengue cases within the tirs trial area
-# case_counts_per_cluster_all is all cases (kids and adults) within each cluster
-
-# cluster_population and block_population are all people in a cluster or block,
-#   respectively
-cluster_population <- cluster_population %>% 
-  st_drop_geometry()
+# have cluster_population now we want block_population
 block_population <- block_population %>% 
   st_drop_geometry() %>% 
   mutate(IDMZA = paste0(as.character(CLUSTER), as.character(MZTIRS)))
+block_population$IDMZA <- as.numeric(block_population$IDMZA)
 
 ## add the population to cluster shapefile
-cluster_population$CLUSTER <- as.numeric(cluster_population$CLUSTER)
-block_population$IDMZA <- as.numeric(block_population$IDMZA)
-block_population$CLUSTER <- as.numeric(block_population$CLUSTER)
 clusters_rate <- clusters_cases %>% 
   left_join(cluster_population, by = "CLUSTER") %>% 
   left_join(block_population, by = c("IDMZA", "MZTIRS", "CLUSTER")) %>% 
-  mutate(rate_cluster = (n/Cluster_Population) * 1000,
-         rate_block = (n / Block_Population) * 10)
+  mutate(rate_cluster = (num_denv_cases/Cluster_Population) * 1000)
 
 # rate by cluster
 ggplot() +
@@ -455,7 +512,7 @@ ggplot() +
   scale_fill_gradient(
     low = "#deebf7",
     high = "#041c3a",
-    name = "Cases") +
+    name = "Cases per 1,000 people") +
   scale_color_gradient(
     low = "#deebf7",
     high = "#041c3a",
@@ -466,7 +523,7 @@ ggplot() +
            ylim = c(st_bbox(clusters_sf)$ymin, st_bbox(clusters_sf)$ymax), 
            expand = FALSE) +
   theme_minimal() +
-  labs(title = "Heatmap of case rates per cluster")
+  labs(title = "Heatmap of Cases per 1,000 People")
 ggsave("heatmap_case_rates_cluster.pdf", height = 3)
 ```
 
@@ -520,21 +577,21 @@ ggplot() +
   geom_sf(data = clusters_adult_rate, aes(fill = adult_rate_cluster, 
                                           color = adult_rate_cluster), 
           linewidth = 0.01) +
-  scale_fill_gradient(
-    low = "#deebf7",
-    high = "#041c3a",
-    name = "Cases") +
-  scale_color_gradient(
-    low = "#deebf7",
-    high = "#041c3a",
-    guide = "none") +
-  # scale_fill_viridis_c(name = "Cases per 1000 people") +
-  # scale_color_viridis_c(guide = "none") +
+  # scale_fill_gradient(
+  #   low = "#deebf7",
+  #   high = "#041c3a",
+  #   name = "Cases per 1,000 people") +
+  # scale_color_gradient(
+  #   low = "#deebf7",
+  #   high = "#041c3a",
+  #   guide = "none") +
+  scale_fill_viridis_c(name = "Cases per 1000 people") +
+  scale_color_viridis_c(guide = "none") +
   coord_sf(xlim = c(st_bbox(clusters_sf)$xmin, st_bbox(clusters_sf)$xmax), ## zooom in on cluster area
            ylim = c(st_bbox(clusters_sf)$ymin, st_bbox(clusters_sf)$ymax), 
            expand = FALSE) +
   theme_minimal() +
-  labs(title = "Heatmap of adult case rates per cluster")
+  labs(title = "Heatmap of adult cases per 1,000 people")
 ggsave("heatmap_case_rates_cluster_adult.pdf", height = 3)
 ```
 
@@ -591,7 +648,7 @@ ggplot() +
   scale_fill_gradient(
     low = "#deebf7",
     high = "#041c3a",
-    name = "Cases") +
+    name = "Cases per 1,000 people") +
   scale_color_gradient(
     low = "#deebf7",
     high = "#041c3a",
@@ -602,18 +659,12 @@ ggplot() +
            ylim = c(st_bbox(clusters_sf)$ymin, st_bbox(clusters_sf)$ymax), 
            expand = FALSE) +
   theme_minimal() +
-  labs(title = "Heatmap of child case rates per cluster")
+  labs(title = "Heatmap of child cases per 1,000 people")
 ggsave("heatmap_case_rates_cluster_kid.pdf", height = 3)
 ```
 
 ## entomological data
 ```{r}
-# mosquito counts by cluster
-mosq_counts <- ento %>% 
-  group_by(id_cluster) %>% 
-  summarize(ae_fem_total = sum(`Sum of ae_fem`))
-mosq_counts <- mosq_counts[-1,]
-
 ## add the mosquito counts to cluster shapefile
 mosq_counts$id_cluster <- as.numeric(mosq_counts$id_cluster)
 clusters_sf <- clusters_sf %>% 
@@ -647,8 +698,8 @@ ggsave("heatmap_mosquito_count.pdf", height = 3)
 ```{r}
 ggplot() +
   geom_sf(data = merida_cluster_sf, fill = "white", linewidth = 0.05) +
-  geom_sf(data = clusters_sf, linewidth = 0.05, aes(fill = as.factor(trial_arm),
-                                                    color = as.factor(trial_arm)),
+  geom_sf(data = clusters_sf, linewidth = 0.05, aes(fill = as.factor(trial_arm.x),
+                                                    color = as.factor(trial_arm.x)),
           alpha = 0.85) +
   scale_fill_manual(values = c("tomato", "darkolivegreen3"), 
                     name = "TIRS Trial Arm", labels = c("Control", 
@@ -663,7 +714,11 @@ ggplot() +
 ggsave("cluster_trial_arms.pdf", height = 3)
 ```
 
-# Regression and ICC
+
+
+
+
+# Poisson Regression
 ```{r}
 # dataset for the model
 ## number of cases per block/cluster
@@ -680,7 +735,7 @@ child_cases <- denv_kid_cases_sf %>%
 ## trial arm info
 trial_arm <- clusters_sf %>% 
   group_by(CLUSTER, MZTIRS) %>% 
-  summarize(trial_arm = mean(trial_arm)) %>% 
+  summarize(trial_arm = mean(trial_arm.x)) %>% 
   st_drop_geometry()
 
 reg_dat <- reg_dat_orig %>% 
@@ -742,16 +797,97 @@ reg_dat %>% filter(num_cases_kids > child_pop)
 
 # some missing population, i.e., sum(is.na(population)) > 0
 
-fit <- glmer(
-  cbind(num_cases_total, noncases_total) ~ trial_arm + (1 | CLUSTER/MZTIRS),
-  family = "binomial", 
-  data = reg_dat)
-summary(fit)
-exp(fixef(fit))
-VarCorr(fit)
+# fit <- glmer(
+#   cbind(num_cases_total, noncases_total) ~ trial_arm + (1 | CLUSTER/MZTIRS),
+#   family = "binomial", 
+#   data = reg_dat)
+# summary(fit)
+# exp(fixef(fit))
+# VarCorr(fit)
+
+# ok not this...this one only looks at cases, doesn't account for rest of population
+```
+
+## no offset
+### everyone
+```{r}
+# only by cluster
+reg_dat_cluster <- reg_dat %>% 
+  group_by(CLUSTER, trial_arm) %>% 
+  summarize(total_cases = sum(num_cases_total),
+            total_population = round(sum(population), 0),
+            total_cases_adult = sum(num_cases_adult),
+            total_pop_adult = sum(adult_pop),
+            total_cases_kids = sum(num_cases_kids),
+            total_pop_kids = round(sum(child_pop), 0))
+
+# with and without offset
+# want: cases within a cluster, denominator, trial arm
+pois_fit <- glm(total_cases ~ trial_arm, family = poisson(link = "log"), 
+                data = reg_dat_cluster)
+1 - exp(coef(pois_fit)["trial_arm"])
+1 - exp(confint(pois_fit))
+```
+
+### adults only
+```{r}
+pois_adults <- glm(total_cases_adult ~ trial_arm, family = poisson(link = "log"), 
+                data = reg_dat_cluster)
+1 - exp(coef(pois_adults)["trial_arm"])
+1 - exp(confint(pois_adults))
+```
+
+### community effect
+```{r}
+comm_dat <- denv_cases_sf %>% 
+  filter(Source == "SINAVE") %>% 
+  count(CLUSTER, Arm_1TIRS, name = "num_cases_total") %>% 
+  st_drop_geometry()
+
+pois_comm <- glm(num_cases_total ~ Arm_1TIRS, 
+                 family = poisson(link = "log"), 
+                 data = comm_dat)
+1 - exp(coef(pois_comm)["Arm_1TIRS"])
+1 - exp(confint(pois_comm))
+```
+Got the same community effect as Natalie
+
+### children only
+```{r}
+pois_kids <- glm(total_cases_kids ~ trial_arm, family = poisson(link = "log"), 
+                data = reg_dat_cluster)
+1 - exp(coef(pois_kids)["trial_arm"])
+1 - exp(confint(pois_kids))
+```
+
+## with offset
+### everyone
+```{r}
+pois_ofit <- glm(total_cases ~ trial_arm + offset(log(total_population)), 
+                family = poisson(link = "log"), 
+                data = reg_dat_cluster)
+1 - exp(coef(pois_ofit)["trial_arm"])
+1 - exp(confint(pois_ofit))
+```
+
+### adults only
+```{r}
+pois_oadults <- glm(total_cases_adult ~ trial_arm, + offset(log(total_pop_adult)),
+                    family = poisson(link = "log"), data = reg_dat_cluster)
+1 - exp(coef(pois_oadults)["trial_arm"])
+1 - exp(confint(pois_oadults))
+```
+
+### children only
+```{r}
+pois_okids <- glm(total_cases_kids ~ trial_arm, + offset(log(total_pop_kids)),
+                    family = poisson(link = "log"), data = reg_dat_cluster)
+1 - exp(coef(pois_okids)["trial_arm"])
+1 - exp(confint(pois_okids))
 ```
 
 
+# Logistic Regression and ICC
 ```{r}
 dat_adult <- data.frame(dengue_case = c(),
                       trial_arm = c(),
@@ -799,17 +935,16 @@ for (row in 1:nrow(reg_dat)) {
 
 dat_total <- rbind(dat_adult, dat_kids)
 
-fit <- glmer(
-  dengue_case ~ trial_arm + (1 | cluster/block),
-  family = "binomial", 
-  data = dat_total)
+fit <- glmer(dengue_case ~ trial_arm + (1 | cluster/block),
+             family = "binomial", 
+             data = dat_total)
 summary(fit)
 
-test <- glmer(
-  dengue_case ~ trial_arm + (1 | cluster),
-  family = "binomial", 
-  data = dat_total)
-summary(test)
+# test <- glmer(
+#   dengue_case ~ trial_arm + (1 | cluster),
+#   family = "binomial", 
+#   data = dat_total)
+# summary(test)
 ```
 
 
@@ -818,7 +953,7 @@ summary(test)
 fit_adults <- glmer(
   dengue_case ~ trial_arm + (1 | cluster/block),
   family = "binomial", 
-  data = )
+  data = dat_adult)
 summary(fit_adults)
 ```
 
