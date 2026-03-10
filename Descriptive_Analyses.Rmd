@@ -31,7 +31,9 @@ pacman::p_load(sf, # spatial
                terra,
                raster,
                exactextractr,
-               MuMIn # calculate icc
+               MuMIn, # calculate icc
+               iccCounts,
+               performance
                )
 ```
 
@@ -296,16 +298,22 @@ merida_block_sf$P_18YMAS <- as.numeric(merida_block_sf$P_18YMAS)
 # calculate adult population
 clusters_sf$P_18YMAS <- as.numeric(clusters_sf$P_18YMAS)
 cluster_adult_population <- clusters_sf %>% 
-  group_by(CLUSTER) %>% 
+  group_by(CLUSTER, trial_arm.x) %>% 
   summarize(Cluster_Adult_Population = sum(P_18YMAS, na.rm = TRUE)) %>% 
   st_drop_geometry()
 
 # calculate kid population
 cluster_kid_population <- clusters_sf %>% 
-  group_by(CLUSTER) %>% 
+  group_by(CLUSTER, trial_arm.x) %>% 
   summarize(Cluster_Kid_Population = sum(POBTOT) - 
               sum(P_18YMAS, na.rm = TRUE)) %>% 
   st_drop_geometry()
+
+by_arm <- cluster_adult_population %>% 
+  left_join(cluster_kid_population, by = c("CLUSTER", "trial_arm.x")) %>% 
+  group_by(trial_arm.x) %>% 
+  summarize(adult_pop = sum(Cluster_Adult_Population),
+            kid_pop = sum(Cluster_Kid_Population))
 ```
 Population of the city: `r sum(merida_block_sf$POBTOT)`
 Population of adults in the city: `r sum(merida_block_sf$P_18YMAS, na.rm = TRUE)`
@@ -714,10 +722,6 @@ ggplot() +
 ggsave("cluster_trial_arms.pdf", height = 3)
 ```
 
-
-
-
-
 # Poisson Regression
 ```{r}
 # dataset for the model
@@ -791,9 +795,9 @@ reg_dat <- reg_dat %>%
   filter(num_cases_kids <= child_pop)
 
 # ## any cases where there are more cases than population?
-reg_dat %>% filter(num_cases_total > population)
-reg_dat %>% filter(num_cases_adult > adult_pop)
-reg_dat %>% filter(num_cases_kids > child_pop)
+# reg_dat %>% filter(num_cases_total > population)
+# reg_dat %>% filter(num_cases_adult > adult_pop)
+# reg_dat %>% filter(num_cases_kids > child_pop)
 
 # some missing population, i.e., sum(is.na(population)) > 0
 
@@ -825,6 +829,7 @@ reg_dat_cluster <- reg_dat %>%
 # want: cases within a cluster, denominator, trial arm
 pois_fit <- glm(total_cases ~ trial_arm, family = poisson(link = "log"), 
                 data = reg_dat_cluster)
+summary(pois_fit)
 1 - exp(coef(pois_fit)["trial_arm"])
 1 - exp(confint(pois_fit))
 ```
@@ -847,6 +852,10 @@ comm_dat <- denv_cases_sf %>%
 pois_comm <- glm(num_cases_total ~ Arm_1TIRS, 
                  family = poisson(link = "log"), 
                  data = comm_dat)
+comm_dat %>% 
+  group_by(Arm_1TIRS) %>% 
+  summarize(sum = sum(num_cases_total))
+
 1 - exp(coef(pois_comm)["Arm_1TIRS"])
 1 - exp(confint(pois_comm))
 ```
@@ -858,6 +867,42 @@ pois_kids <- glm(total_cases_kids ~ trial_arm, family = poisson(link = "log"),
                 data = reg_dat_cluster)
 1 - exp(coef(pois_kids)["trial_arm"])
 1 - exp(confint(pois_kids))
+```
+
+### children not in the study
+```{r}
+# table(denv_cases_sf$Source, denv_cases_sf$Arm_1TIRS)
+# sinave_adults <- denv_cases_sf %>% 
+#   filter(Source == "SINAVE" & Age >= 18)
+# 
+# table(sinave_adults$Source, sinave_adults$Arm_1TIRS)
+
+sinave_kids <- denv_cases_sf %>%
+  filter(Source == "SINAVE" & Age < 18)
+to_add <- sinave_kids %>% 
+  count(CLUSTER, name = "num_cases_sinave_kids") %>% 
+  st_drop_geometry()
+# need to find total number of kids in the cluster NOT in the trial
+# so need to first get num. kids in the trial by cluster
+trial_kids_per_cluster <- readRDS("trial_kids_per_cluster.rds")
+
+trial_kids_per_cluster$cluster <- as.numeric(trial_kids_per_cluster$cluster)
+to_add <- to_add %>% 
+  full_join(trial_kids_per_cluster, by = c("CLUSTER" = "cluster"))
+
+reg_dat_cluster_new <- reg_dat_cluster %>% 
+  left_join(to_add, by = c("CLUSTER")) %>% 
+  mutate(total_cases_sinave_kids = ifelse(is.na(num_cases_sinave_kids), 0,
+                                        num_cases_sinave_kids),
+         total_pop_sinave_kids = total_pop_kids - total_pop_kids_trial)
+```
+
+regression
+```{r}
+pois_sinave_kids <- glm(total_cases_sinave_kids ~ trial_arm, 
+                        family = poisson(link = "log"), data = reg_dat_cluster_new)
+1 - exp(coef(pois_sinave_kids)["trial_arm"])
+1 - exp(confint(pois_sinave_kids))
 ```
 
 ## with offset
@@ -872,7 +917,7 @@ pois_ofit <- glm(total_cases ~ trial_arm + offset(log(total_population)),
 
 ### adults only
 ```{r}
-pois_oadults <- glm(total_cases_adult ~ trial_arm, + offset(log(total_pop_adult)),
+pois_oadults <- glm(total_cases_adult ~ trial_arm + offset(log(total_pop_adult)),
                     family = poisson(link = "log"), data = reg_dat_cluster)
 1 - exp(coef(pois_oadults)["trial_arm"])
 1 - exp(confint(pois_oadults))
@@ -880,10 +925,19 @@ pois_oadults <- glm(total_cases_adult ~ trial_arm, + offset(log(total_pop_adult)
 
 ### children only
 ```{r}
-pois_okids <- glm(total_cases_kids ~ trial_arm, + offset(log(total_pop_kids)),
+pois_okids <- glm(total_cases_kids ~ trial_arm + offset(log(total_pop_kids)),
                     family = poisson(link = "log"), data = reg_dat_cluster)
 1 - exp(coef(pois_okids)["trial_arm"])
 1 - exp(confint(pois_okids))
+```
+
+### children not in the study
+```{r}
+pois_osinave_kids <- glm(total_cases_sinave_kids ~ trial_arm + offset(log(total_pop_sinave_kids)), 
+                        family = poisson(link = "log"), 
+                        data = reg_dat_cluster_new)
+1 - exp(coef(pois_osinave_kids)["trial_arm"])
+1 - exp(confint(pois_osinave_kids))
 ```
 
 
@@ -934,17 +988,54 @@ for (row in 1:nrow(reg_dat)) {
 }
 
 dat_total <- rbind(dat_adult, dat_kids)
+```
 
+ICC function
+```{r}
+find_icc_logistic <- function(fit){
+  # finding R^2 and ICC
+  ## variance of fixed effects
+  var_fe <- var(getME(fit,'X') %*% fixef(fit))
+  ## variance of block and cluster (how do i know this is the variance of the random effects?)
+  ##    isn't 'theta' the RE parameter estimates ?
+  var_blk <- unname((getME(fit, 'theta')[1])^2)
+  var_clus <- unname(getME(fit, 'theta')[2])^2
+  ## total variance
+  var_ttl <- var_fe + var_blk + var_clus + pi^2/3 #var of distribution for binomial, logit link
+  
+  ## R^2
+  ### R^2_m is marginal R^2; proportion of total variance explained by fixed effects
+  r2_fixed <- var_fe / var_ttl
+  ### also calculate variance for block and cluster
+  r2_blk <- var_blk / var_ttl
+  r2_clus <- var_clus / var_ttl
+  ### proportion of variance explained by both fixed and random effects
+  r2_c <- (var_fe + var_blk + var_clus) / var_ttl
+  
+  ## ICC
+  icc <- (var_blk + var_clus) / var_ttl # with fixed effects
+  icc_adj <- (var_blk + var_clus) / (var_blk + var_clus + pi^2/3)
+  
+  c(
+    r2_fixed = r2_fixed,
+    r2_block = r2_blk,
+    r2_cluster = r2_clus,
+    r2_conditional = r2_c,
+    icc_adjusted = icc_adj
+  )
+}
+```
+
+
+## everyone
+```{r}
+# model
 fit <- glmer(dengue_case ~ trial_arm + (1 | cluster/block),
              family = "binomial", 
              data = dat_total)
 summary(fit)
-
-# test <- glmer(
-#   dengue_case ~ trial_arm + (1 | cluster),
-#   family = "binomial", 
-#   data = dat_total)
-# summary(test)
+find_icc_logistic(fit)
+MuMIn::r.squaredGLMM(fit)
 ```
 
 
@@ -955,6 +1046,23 @@ fit_adults <- glmer(
   family = "binomial", 
   data = dat_adult)
 summary(fit_adults)
+
+var_fe_a <- var(getME(fit_adults,'X') %*% fixef(fit_adults))
+
+var_blk_a <- unname((getME(fit_adults, 'theta')[1])^2)
+var_clus_a <- unname(getME(fit_adults, 'theta')[2])^2
+
+var_ttl_a <- var_fe_a + var_blk_a + var_clus_a + pi^2/3 #var of distribution for binomial, logit link
+
+r2_fixed_a <- var_fe_a / var_ttl_a
+
+r2_blk_a <- var_blk_a / var_ttl_a
+r2_clus_a <- var_clus_a / var_ttl_a
+
+r2_c_a <- (var_fe_a + var_blk_a + var_clus_a) / var_ttl_a
+
+icc_a <- (var_blk_a + var_clus_a) / var_ttl_a # with 
+icc_adj_a <- (var_blk_a + var_clus_a) / (var_blk_a + var_clus_a + pi^2/3)
 ```
 
 ## children only
@@ -964,5 +1072,111 @@ fit_kids <- glmer(
   family = "binomial", 
   data = dat_kids)
 summary(fit_kids)
+
+var_fe_k <- var(getME(fit_kids,'X') %*% fixef(fit_kids))
+
+var_blk_k <- unname((getME(fit_kids, 'theta')[1])^2)
+var_clus_k<- unname(getME(fit_kids, 'theta')[2])^2
+
+var_ttl_k <- var_fe_k + var_blk_k + var_clus_k + pi^2/3 #var of distribution for binomial, logit link
+
+r2_fixed_k <- var_fe_k / var_ttl_k
+
+r2_blk_k <- var_blk_k / var_ttl_k
+r2_clus_k <- var_clus_k / var_ttl_k
+
+r2_c_k <- (var_fe_k + var_blk_k  + var_clus_k) / var_ttl_k
+
+icc_k <- (var_blk_k + var_clus_k) / var_ttl_k # with 
+icc_adj_k <- (var_blk_k + var_clus_k) / (var_blk_k + var_clus_k + pi^2/3)
 ```
+
+# Poisson Mixed Effects
+
+ICC function (poisson distribution)
+```{r}
+find_icc_pois <- function(fit, intercept_only) {
+  var_fe <- var(getME(fit,'X') %*% fixef(fit))
+  var_blk <- unname((getME(fit, 'theta')[1])^2)
+  var_clus <- unname(getME(fit, 'theta')[2])^2
+  # find latent variance
+  var_tau <- unname((getME(intercept_only, 'theta')[1])^2) + 
+    unname(getME(intercept_only, 'theta')[2])^2
+  beta0 <- getME(intercept_only, 'beta')[1]
+  lambda <- exp(beta0 + 0.5 * var_tau)
+  var_dis <- log(1 + 1/lambda)
+  var_ttl <- var_fe + var_blk + var_clus + var_dis
+  
+  r2_fixed <- var_fe / var_ttl
+  r2_blk <- var_blk / var_ttl
+  r2_clus <- var_clus / var_ttl
+  ### proportion of variance explained by both fixed and random effects
+  r2_c <- (var_fe + var_blk + var_clus) / var_ttl
+  ## ICC
+  icc <- (var_blk + var_clus) / var_ttl # with fixed effects
+  icc_adj <- (var_blk + var_clus) / (var_blk + var_clus + var_dis)
+  
+  c(
+    r2_fixed = r2_fixed,
+    r2_block = r2_blk,
+    r2_cluster = r2_clus,
+    r2_conditional = r2_c,
+    icc_adjusted = icc_adj
+  )
+}
+```
+
+## everyone
+cluster only?
+```{r}
+pois_glm <- glmer(total_cases ~ trial_arm + (1 | CLUSTER),
+             family = "poisson", 
+             data = reg_dat_cluster)
+summary(pois_glm)
+performance(pois_glm)
+MuMIn::r.squaredGLMM(pois_glm)
+icc_counts(reg_dat_cluster, y = "total_cases", id = "CLUSTER", met = "trial_arm",
+           type = "con")
+```
+
+with block
+```{r}
+pois_me <- glmer(num_cases_total ~ trial_arm + (1 | CLUSTER / MZTIRS),
+             family = "poisson", 
+             data = reg_dat)
+pois_mei <- glmer(num_cases_total ~ 1 + (1 | CLUSTER / MZTIRS),
+             family = "poisson", 
+             data = reg_dat)
+# summary(pois_me)
+find_icc_pois(pois_me, pois_mei)
+MuMIn::r.squaredGLMM(pois_me)
+```
+
+## adults only
+```{r}
+pois_me_adults <- glmer(num_cases_adult ~ trial_arm + (1 | CLUSTER / MZTIRS),
+             family = "poisson", 
+             data = reg_dat)
+pois_me_adultsi <- glmer(num_cases_adult ~ 1 + (1 | CLUSTER / MZTIRS),
+             family = "poisson", 
+             data = reg_dat)
+# summary(pois_me_adults)
+find_icc_pois(pois_me_adults, pois_me_adultsi)
+MuMIn::r.squaredGLMM(pois_me_adults)
+```
+
+## children only
+```{r}
+pois_me_kids <- glmer(num_cases_kids ~ trial_arm + (1 | CLUSTER / MZTIRS),
+             family = "poisson", 
+             data = reg_dat)
+pois_me_kidsi <- glmer(num_cases_kids ~ 1 + (1 | CLUSTER / MZTIRS),
+             family = "poisson", 
+             data = reg_dat)
+#summary(pois_me_kids)
+find_icc_pois(pois_me_kids, pois_me_kidsi)
+MuMIn::r.squaredGLMM(pois_me_kids)
+```
+
+
 

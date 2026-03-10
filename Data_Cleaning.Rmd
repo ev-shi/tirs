@@ -62,7 +62,7 @@ merge prep:
 ## merge....prep?
 ### give participants a unique ID
 cohortp <- cohort %>% 
-  select(-c(10:11)) %>% 
+  dplyr::select(-c(10:11)) %>% 
   mutate(record_id = as.numeric(str_sub(PPID, 1, 6)),
          Enrolm_Date = mdy(Enrolm_Date),
          Exit_Date = ifelse(E3_Date == "#N/A", "12/31/2023", E3_Date),
@@ -70,20 +70,20 @@ cohortp <- cohort %>%
   relocate(record_id, .after = PPID)
 rn2p <- rn2 %>% 
   # remove REDCap stuff
-  select(-c(redcap_event_name, redcap_repeat_instrument,
+  dplyr::select(-c(redcap_event_name, redcap_repeat_instrument,
             redcap_repeat_instance)) %>% 
   filter(!is.na(rn2_pt_id) & rn2_cnst_n2 == 1) %>% 
   mutate(PPID = paste0(record_id, LETTERS[rn2_pt_id])) %>% 
   relocate(PPID)
 armsp <- arms %>% 
-  select(-c(redcap_event_name, redcap_repeat_instrument,
+  dplyr::select(-c(redcap_event_name, redcap_repeat_instrument,
             redcap_repeat_instance)) %>% 
   mutate(PPID = paste0(record_id, LETTERS[a_pt_id])) %>% 
   relocate(PPID)
 
 ### ok these also depend on year
 actsp <- actsurv %>% 
-  select(-c(redcap_event_name, redcap_repeat_instrument,
+  dplyr::select(-c(redcap_event_name, redcap_repeat_instrument,
             redcap_repeat_instance, var6_no)) %>% 
   mutate(PPID = paste0(record_id, LETTERS[var6_pt_id])) %>% 
   relocate(PPID) %>% 
@@ -93,12 +93,12 @@ actsp <- actsurv %>%
 ### by house, not by participant
 ### so just get rid of redcap names
 so1p <- so1 %>% 
-  select(-c(redcap_event_name, redcap_repeat_instrument, 
+  dplyr::select(-c(redcap_event_name, redcap_repeat_instrument, 
             redcap_repeat_instance))
 
 ## subset of main population, also for different endpoint (infection) ?
 serop <- sero %>% ## ok want to figure out how to add this - to main dataset?
-  select(-c(redcap_event_name, redcap_repeat_instrument,
+  dplyr::select(-c(redcap_event_name, redcap_repeat_instrument,
             redcap_repeat_instance)) %>% 
   mutate(PPID = paste0(record_id, LETTERS[ss_pt_id])) %>% 
   relocate(PPID)
@@ -121,7 +121,7 @@ entop <- ento %>%
   # just take first per house?
   group_by(record_id) %>% 
   slice(1) %>% 
-  select(-block_type)
+  dplyr::select(-block_type)
 ```
 
 merge together:
@@ -144,6 +144,14 @@ full <- cohortp %>%
   mutate(arm = first(trial_arm[!is.na(trial_arm)])) %>% 
   ungroup()
 ```
+
+## export total number of kids in each cluster
+```{r}
+trial_kids_per_cluster <- full %>% 
+  count(cluster, name = "total_pop_kids_trial") 
+saveRDS(trial_kids_per_cluster, "trial_kids_per_cluster.rds")
+```
+
 
 function to calculate person-time since we're only looking at active 
 surveillance during peak ABD season (July 1 - December 31)
