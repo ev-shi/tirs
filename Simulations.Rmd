@@ -5,9 +5,280 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
-# Data Generation
-
+# From Matt
 ```{r}
+## Some simulation code
+require(dplyr)
+require(geepack)
+require(ggplot2)
+
+expit = function(x) {1/(1+exp(-x))}
+
+n_clust = 58
+
+n_perclust = 60
+n = n_clust * n_perclust
+
+trial_period = 5
+
+foi_mean <- -3
+foi_sd <- 1.5
+
+spatial_re_alpha = 1
+
+minage = 6
+maxage = 12
+
+### Given a vector of annual dengue force of infection (=annual cumulative hazard) and spatial variation in 
+### hazard across study clusters
+### 1. Calculate historical cumulative hazard for participants based on age and cluster
+### 2. Simulate individual-level baseline serostatus of the trial population using historical FOI and age
+
+simulate_trial_pop = function(n_clust,n_perclust,minage,maxage,
+                              foi_annual,spatial_res) {
+  
+  foi_historical = foi_annual[1:maxage]
+  
+  trial_df = data.frame('Site'=rep(1:n_clust,each=n_perclust),
+                        'Intervention'=c(rep(0,n_clust*n_perclust/2),
+                                         rep(1,n_clust*n_perclust/2)),
+                        'Age'=sample(minage:maxage,n_clust*n_perclust,replace=T)
+  )
+  trial_df$CumHaz = sapply(1:nrow(trial_df),function(x) sum(foi_historical[maxage:(maxage-trial_df$Age[x]+1)]) * spatial_res[trial_df$Site[x]])
+  trial_df$PSN = exp(-4*trial_df$CumHaz)
+  trial_df$PS1 = 4 * (1 - exp(-trial_df$CumHaz)) * exp(-3 * trial_df$CumHaz)
+  trial_df$PSM = 1 - trial_df$PSN - trial_df$PS1
+  
+  trial_df$Serostatus = sapply(1:nrow(trial_df),function(x) (0:2)[rmultinom(1,1,trial_df[x,c("PSN","PS1","PSM")])==1])
+  
+  return(trial_df)
+  
+}
+
+### Given a study population with simulated baseline serostatus
+### 1. Simulate individual-level outcomes based on baseline serostatus and FOI during the trial
+### 2. Estimate effectiveness of the intervention using a GEE model
+### 3. Return estimate effectiveness and p-value
+analyse_trial = function(trial_df,foi_trial,spatial_res,effectiveness) {
+  
+  ### Note that for each individual we modify the FOI experienced in the trail by (a) the spatial term, (b) the intervention, and (c)
+  ### baseline serostatus. For this last part, we assume equal circulation of four DENV serotypes so that monotypic individuals experience
+  ### 3/4 of the FOI of naive individuals. We also assume that individuals with >1 prior infection do not contribute information to the trial
+  trial_df$trial_cumhaz = sapply(1:nrow(trial_df),function(x) sum(foi_trial)*spatial_res[trial_df$Site[x]] * 
+                                   c(1,effectiveness)[trial_df$Intervention[x]+1] * c(1,0.75,0)[trial_df$Serostatus[x]+1])
+  
+  ### Simulating a binomial outcome based on cumulative hazard means just converting cumulative hazard to probability (1 - exp(Lambda))
+  ### The factor of four accounts for the four serotypes of DENV
+  trial_df$Y = rbinom(nrow(trial_df),1,1 - exp(-4*trial_df$trial_cumhaz))
+  
+  m = geeglm(Y~Intervention,id=Site,data=trial_df,family=binomial)
+  ci = mean(trial_df$Y)
+  effhat = exp(coef(m)[2])
+  p = coef(summary(m))[2,4]
+  
+  return(list(effhat,p,ci))
+  
+}
+
+## Simulate nsim trials, given fixed inputs governing mean and annual variation in FOI, spatial variation, true effectiveness
+## and study sample size
+simulate_trials = function(nsim,foi_mean,foi_sd,spatial_re_alpha,n_clust,n_perclust,minage,maxage,effectiveness) {
+  
+  effhats = rep(NA,nsim)
+  ps = rep(NA,nsim)
+  cis = rep(NA,nsim)
+  
+  
+  for (sim in 1:nsim) {
+    
+    ## Generate annual FOI from a normal distribution (on the logit scale)
+    foi_annual = expit(rnorm(maxage + trial_period,foi_mean, sqrt(foi_sd ^2 / 2)))/4
+    foi_trial = foi_annual[(maxage+1):(maxage+trial_period)]
+    
+    if (spatial_re_alpha==0) {
+      spatial_res = rep(1,n_clust)
+    } else {
+      spatial_res = rgamma(n_clust,spatial_re_alpha,spatial_re_alpha)
+    }
+    
+    trial_df = simulate_trial_pop(n_clust,n_perclust,minage,maxage,foi_annual,spatial_res)
+    
+    res = analyse_trial(trial_df,foi_trial,spatial_res,effectiveness)
+    
+    effhats[sim] = res[[1]]
+    ps[sim] = res[[2]]
+    cis[sim] = res[[3]]
+    
+  }
+  
+  return(list(mean(ps<=0.05),mean(cis)))
+  
+}
+```
+
+# Parameters
+parameters from the trial?
+- 50 clusters
+- intervention assignment (keep this changing??)
+- cluster size (variable?)
+- trial period 
+
+parameters from the model (to be estimated?)
+- alpha (block-level transmissibility)
+- beta (cluster-level transmissibility)
+- gamma (rest of city transmibility)
+- r (treatment effect reduction, applied to those with the intervention)
+- mu (mean for generation time [infection to infection])
+- sigma^2 (variance for generation time)
+
+static const double ini_alpha = 0.01; // Initialization of parameters
+static const double ini_beta = 0.5;
+static const double ini_gamma = 0.5;
+static const double ini_Gta = 5.0;
+static const double ini_Gtb = 5.0;
+
+static const double lolim_cum = 0.025;
+static const double uplim_cum = 0.975;
+
+# Generate Data
+```{r}
+
+```
+
+# Simulate
+```{r}
+
+```
+
+# Analyze Data
+```{r}
+
+```
+
+# Model
+- no imputing infection time --- assume between 3-10 days, as expected for dengue
+
+## mcmcParams
+This program estimates parameters from the infection data and outputs those estimates
+input:
+output:
+
+Basic structure of this part of the model:
+```{r}
+# libraries
+library(Rcpp)
+```
+
+### functions
+```{r}
+# likelihood
+likelihood <- function()
+```
+
+
+
+MCMC loop
+```{r}
+# main(nSims, burnIn, filePaths, seed){
+    # seed
+    # read files with detailed and global data e.g., nClusers, nIndv
+    # computations (mcmc)
+        # initialize (starting values for MCMC)
+        # determine time range (depending on infection time & diagnosis)
+        # mcmc itrations (for loop)
+            # proposes new parameters
+            # proposal for random walk
+            # generation time density?
+                # restricting to cses where generation time density is well-defined
+            # candidateLogLik = Likelihood()
+            # selection (metropolis-hastings)
+            # save results 
+# }
+
+set.seed(12345)
+
+# read...files...
+n_sim <- 10
+
+# initialize
+current_alpha <- 1
+current_beta <- 1
+current_gamma <- 1
+current_r <- 2
+current_Gmu <- 2
+current_Gs2 <- 3 
+currentLogLike <- -10000
+accepted <- 0
+
+# loop / MCMC iterations
+
+
+nSim <- 10
+alpha <- 0.2
+gamma <- 0.345
+Gta <- 0.76
+Gtb <- 0.23
+sourceCpp('mcmc.cpp')
+mcmc(3:4)
+```
+
+test Rcpp
+```{r}
+sourceCpp('sum.cpp')
+rcpp_sum(1:10)
+
+
+c_sum_fun <- 
+  "double rcpp_sum(NumericVector v){
+      double sum = 0;
+      for(int i=0; i<v.length(); ++i){
+        sum += v[i];
+      }
+      return(sum);
+    }
+"
+cppFunction(c_sum_fun)
+rcpp_sum(1:3)
+```
+
+
+
+## transChains
+This program takes the estimated parameters and infers transmission chains
+input: 
+output:
+
+Basic structure of this part of the model:
+```{r}
+# libraries
+
+# main{
+    # output file name
+    # for each parameter set:
+        # generation time distribution
+        # transmission chain reconstruction
+            # compute hazard of infection
+            # determines possible infectors
+            # samples/assigns most likely infector
+        # store and print output
+# }
+```
+
+## tirsFunctions
+- use Rcpp? have the calculations done in C?se
+```{r}
+# ReadFiles1: get global variables, number of indivudals, sigmas for mcmc parameters
+# ReadFiles2: reads individuals data, community incidence, and infection times
+
+# genDensity: computes vector for generation time density given the params
+
+# FOI_bcd: computes the different lambdas (FOIs) from block, cluster, community
+# Qo_bcd: computes sum of the exponential component for the survival function for observed cases
+# Qu_bcd: computes sum of the exponential component for the survival function for unobserved cases
+
+# Likelihood: computes log-likelihood given the parameter set
+
+# ChainRec: assigns an infector to each individual
 
 ```
 

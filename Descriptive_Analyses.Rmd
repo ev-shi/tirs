@@ -1178,5 +1178,27 @@ find_icc_pois(pois_me_kids, pois_me_kidsi)
 MuMIn::r.squaredGLMM(pois_me_kids)
 ```
 
+## cohort children
+```{r}
+cohort_cases <- denv_cases_sf %>%
+  filter(Source == "TIRS")
+add <- cohort_cases %>% 
+  count(CLUSTER, name = "tirs_cases") %>% 
+  st_drop_geometry()
+trial_kids <- cluster_assignment %>% 
+  left_join(add, by = c("CLUSTER")) %>% 
+  mutate(tirs_cases = ifelse(is.na(tirs_cases), 0, 
+                             tirs_cases))
 
+pois_trial <- glmer(tirs_cases ~ trial_arm + (1 | CLUSTER),
+             family = "poisson", 
+             data = trial_kids)
+pois_triali <- glmer(tirs_cases ~ 1 + (1 | CLUSTER),
+             family = "poisson", 
+             data = trial_kids)
+summary(pois_triali)
+#summary(pois_me_kids)
+find_icc_pois(pois_trial, pois_triali)
+MuMIn::r.squaredGLMM(pois_trial)
+```
 
