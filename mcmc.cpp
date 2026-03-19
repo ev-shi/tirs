@@ -2,12 +2,19 @@
 #include <Rcpp.h>
 using namespace Rcpp;
 
+// variables
+int it, nSim;
+long double param_alpha;
+
+
 // [[Rcpp::export(name = "mcmc")]]
-double test(NumericVector v){
+void test(long double current_alpha, int nSim){
   Rprintf("%s %s %s %s %s \n", "nSim", "alpha", "gamma", "Gta", "Gtb");
-  double sum = 0;
-  for(int i=0; i<v.length(); ++i){
-    sum += v[i];
+  for(int it=0; it<nSim; it++){
+    param_alpha = current_alpha + R::rnorm(0.0, 0.001);
+    while(param_alpha < 0){
+      param_alpha = current_alpha + R::rnorm(0.0, 0.001);
+    }
   }
-  return(sum);
+  Rprintf("%d %.10Lf\n", nSim, param_alpha);
 }

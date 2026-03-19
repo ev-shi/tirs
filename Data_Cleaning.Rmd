@@ -134,12 +134,14 @@ full <- cohortp %>%
   full_join(armsp, by = c("PPID", "record_id")) %>% 
   full_join(so1p, by = "record_id") %>% # house
   full_join(entop, by = "record_id") %>% # house
+  filter(!is.na(Enrolm_Date)) %>% # no enrollment date
   rename(Pos_All = var6_abv_pos___1,
          trial_arm = a_arm,
          block_type = a_block) %>% 
   relocate(c(Pos_All, trial_arm, block_type), .after = evnt_year) %>%
   # fix trial arm assignment
-  mutate(cluster = str_sub(PPID, 1, 2)) %>% 
+  mutate(cluster = str_sub(PPID, 1, 2),
+         block = str_sub(PPID, 3, 4)) %>% 
   group_by(cluster) %>% 
   mutate(arm = first(trial_arm[!is.na(trial_arm)])) %>% 
   ungroup()
@@ -150,6 +152,17 @@ full <- cohortp %>%
 trial_kids_per_cluster <- full %>% 
   count(cluster, name = "total_pop_kids_trial") 
 saveRDS(trial_kids_per_cluster, "trial_kids_per_cluster.rds")
+```
+
+## see block and clusters
+```{r}
+cohort_by_cluster_block <- full %>% 
+  count(cluster, block, name = "clbl_cohort_pop")
+length(unique(cohort_by_cluster_block$block))
+
+num_blocks_per_cluster <- cohort_by_cluster_block %>% 
+  count(cluster, name = "blocks_per_cluster")
+mean(num_blocks_per_cluster$blocks_per_cluster) # avg of 23 blocks in a cluster
 ```
 
 
