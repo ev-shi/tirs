@@ -9,6 +9,7 @@ output: html_document
 library(here)
 library(rio)
 library(tidyverse)
+library(lubridate)
 ```
 
 
@@ -34,18 +35,17 @@ sim_pop <- function(n_clusters = 50, n_per_cluster, n_per_block,
     "TIRS" = c(rep(0, n_per_cluster), rep(1, n_per_cluster)),
     "Age" = sample(min_age:max_age, n, replace = TRUE)
     )
+  
+  trial_pop_df$cluster_block <- paste(trial_pop_df$Cluster, 
+                                      trial_pop_df$Block, sep = "")
   return(trial_pop_df)
 }
 
-test <- sim_pop(6, 10, 5)
+trial_pop <- sim_pop(6, 10, 5)
 ```
 
 ## merida incidence
 ```{r}
-# incidence in the city -- cases per week? do i include population???
-# ## Population of Mérida + Kanasín (old)
-yuc_pop <- read.csv("RESAGEBURB2020 - 31 Yucatán.csv")
-
 ## SINAVE case data, only dengue
 sinave_dengue_cases <- here::here("data", "SINAVE_Data", 
                        "datos_abiertos_dengue_061223.csv") %>%
@@ -65,117 +65,120 @@ sinave_dengue_cases <- here::here("data", "SINAVE_Data",
 # incidence in merida??
 city_cases_by_week <- sinave_dengue_cases %>% 
   count(Week_onset, name = "cases_per_week")
+## divided by population...
+yuc_pop <- read.csv("RESAGEBURB2020 - 31 Yucatán.csv")
+
+I_m <- city_cases_by_week$cases_per_week / yuc_pop$POBTOT[1]
+
+
+# there are a lot of cases at the beginning of the year here...are they part of the '23 outbreak?
+# cases for '23 stop at 47 weeks...what about the rest of the year?
+sinave_24 <- here::here("data", "SINAVE_Data",
+                        "datos_abiertos_dengue_191224.csv") %>%
+  rio::import() %>% 
+  dplyr::as_tibble() %>% 
+  # only want data for Mérida + Kanasín (050, 041 MUNICIPO_RES)
+  filter(MUNICIPIO_RES == 50 | MUNICIPIO_RES == 41) %>% 
+  # change symptom onset date to match cases dataset (i.e., weeks since 
+  #  start of ABD season)
+  mutate(Week_onset = dmy(FECHA_SIGN_SINTOMAS),
+         Week_onset = epiweek(Week_onset),
+         Year = year(FECHA_SIGN_SINTOMAS)) %>%
+  relocate(c(FECHA_SIGN_SINTOMAS, Week_onset), .before = ID_REGISTRO) %>% 
+  filter(ESTATUS_CASO == 2) %>%  # 1 likely; 2 confirmed; 3 discarded
+  mutate(age_grp = as.factor(ifelse(EDAD_ANOS < 18, "Child", "Adult"))) %>% 
+  count(Week_onset, name = "cases_per_week")
 ```
-
-# calculate individual hazard?
-```{r}
-
-```
-
-
-# survival? glm? poiisson?
-```{r}
-# baseline hazard, age, treatment effect
-
-```
-
 
 
 # Simulate Outcomes??
 ```{r}
 # parameters
-alpha <- 0.1
-beta <- 0.3
-gamma <- 0.6
-Gmu <- 0.23
-Gs2 <- 0.9
+alpha <- 0.4
+beta <- 0.2
+gamma <- 0.05
+r <- 0.6
 
-## add hazard???
-# Merida FOI
+Gmu <- 5
+Gs2 <- 2
 
-foi_m <- foi_m + mer_incidence[z] * dgamma(t-z, Gmu, Gs2)
-
-  # // Force of infection from community (place = 0)
-  #   p_outside = 0.;
-  #   for(z=global.MINT; z<=timeInfec; z++){
-  #       if(timeInfec - z <= global.MAX_GENTIME){
-  #           p_outside += out.incidence[z] * indiv.xi[person][timeInfec] * param.genDensity[(int)(timeInfec-z)];
-  #       }
-  #   }
-  #   p_outside = param.alpha * p_outside;
-  #   probs[0][0] = p_outside;
-
-
-
-
-# date of symptom onset 
-
-## 10 initially infected??????? and infection time ranges from 3 - 10
-infection_time <- runif(10, 3, 10)
-
-# for each week find hazard of all infectious individuals
-## break into components
-## hazard -> infection probability
-
-# infection probability by day?
+N <- nrow(test)
 
 trial_start <- 1 # first week of the year
-trial_end <- 52 # last week of the year
+trial_end <- nrow(city_cases_by_week) # 52 is the last week of the year but we don't have city incidence data for that???
 
+# get density of generation time (Gamma) from mean and variance
+gen_time <- function(dt, Gmu, Gs2) {
+  if (dt > 0) {
+    return(dgamma(dt, shape = (Gmu^2) / Gs2, rate = Gmu / Gs2))
+  } else {
+    return(0)
+  }
+}
+  
+# already?? infected??? within the trial???
+trial_pop$infected <- 0
+trial_pop$tau <- 0
+## initial infections??????? 5 initial???
+initial_ids <- sample(1:N, 5)
+trial_pop$infected[initial_ids] <- 1
+trial_pop$tau[initial_ids] <- 1
 
-
-simulate_epidemic <- function(N, T, params, contacts) {
-  
-  infection_time <- rep(Inf, N)
-  infector <- rep(NA, N)
-  place <- rep(NA, N)
-  
-  # seed infections
-  infection_time[sample(1:N, 5)] <- 0
-  
-  for (t in 1:T) {
-    for (i in 1:N) {
-      
-      if (is.finite(infection_time[i])) next  # already infected
-      
-      lambda <- 0
-      
-      for (j in which(infection_time < t)) {
-        
-        dt <- t - infection_time[j]
-        g <- gen_density[dt]
-        
-        # household
-        if (same_household(i, j)) {
-          lambda <- lambda + params$alpha * g
-        }
-        
-        # school
-        if (same_school(i, j)) {
-          lambda <- lambda + params$gamma * g
-        }
-        
-        # community
-        lambda <- lambda + params$beta * g
+infect_pop <- function(trial_pop) {
+  lambda_m <- rep(0, trial_end)
+  for (t  in 2:trial_end){
+    
+    new_infections <- c()
+    
+    for (j in 1:N){
+      if (trial_pop$infected[j] == 1) { 
+        next 
       }
       
-      p <- 1 - exp(-lambda)
+      lambda_j <- 0
       
-      if (runif(1) < p) {
-        infection_time[i] <- t
-        
-        # sample infector proportional to contributions
-        # (important!)
-        infector[i] <- sample_infectors(...)
-        place[i] <- sample_place(...)
+      # block FOI
+      same_block <- which(trial_pop$cluster_block ==
+                            trial_pop$cluster_block[j])
+      for (i in same_block){
+        if (trial_pop$infected[i] == 1) {
+          dt <- t - trial_pop$tau[i]
+          lambda_j <- lambda_j + r * alpha * gen_time(dt, Gmu, Gs2)
+        }
+      }
+      
+      # cluster FOI
+      same_cluster <- which(trial_pop$Cluster == trial_pop$Cluster[j])
+      diff_block <- setdiff(same_cluster, same_block)
+      for (i in diff_block) {
+        if (trial_pop$infected[i] == 1) {
+          dt <- t - trial_pop$tau[i]
+          lambda_j <- lambda_j + r * beta * gen_time(dt, Gmu, Gs2)
+        }
+      }
+      
+      # merida FOI
+      for (z in 1:(t-1)) {
+        dt <- t - z
+        lambda_j <- lambda_j + gamma * I_m[z] * gen_time(dt, Gmu, Gs2)
+      }
+      
+      # probability of infection given hazard
+      p_j <- 1 - exp(-lambda_j)
+      
+      # is j infected or not?
+      if (runif(1) < p_j) {
+        new_infections <- c(new_infections, j)
       }
     }
+    
+    if (length(new_infections) > 0) {
+      trial_pop$infected[new_infections] <- 1
+      trial_pop$tau[new_infections] <- t
+    }
   }
-  
-  list(infection_time = infection_time,
-       infector = infector,
-       place = place)
 }
+
 ```
 
 
