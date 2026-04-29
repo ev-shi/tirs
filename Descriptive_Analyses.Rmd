@@ -67,6 +67,7 @@ cases_sf <- st_read(dsn = here("data"),
 ## Cases by TIRS block (not a shapefile, will add this info onto the shapefile)
 cases_tirs_info <- read_csv("data/TIRS_SINAVE_combined22_23_blockID.csv")
 
+
 ## TIRS Clusters Shapefile
 clusters_sf <- st_read(dsn = here("data"),
                     layer = "Cluster final 2021 actualizado")
@@ -92,6 +93,42 @@ clusters_sf <- st_transform(clusters_sf, st_crs(merida_block_sf))
 #   geom_sf(data = yuc_m, linewidth = 0.05) +
 #   geom_sf(data = clusters_sf, color = "blue", linewidth = 0.05)
 # ggsave("are_TIRS_blocks_and_SINAVE_MZA_the_same.pdf")
+```
+
+## data formatting for model
+```{r}
+seven <- cases_tirs_info %>% 
+  head(7) %>% 
+  select(ID, MZTIRS, CLUSTER, Week_onset, Week_onset)
+v <- c(rep(-1, 9), rep(-1, 3), 1)
+neg_vax <- as.data.frame(matrix(v, nrow = 7, ncol = length(v), byrow = TRUE))
+seven <- cbind(seven, neg_vax)
+write.table(seven, file = "seven.txt", sep = " ", row.names = FALSE,
+            col.names = FALSE)
+
+inf_time <- seven$Week_onset
+inf_times <- matrix(inf_time, nrow = 100, ncol = length(inf_time), 
+                    byrow = TRUE)
+write.table(inf_times, file = "inf_times.txt", sep = " ", row.names = FALSE,
+            col.names = FALSE)
+
+# attendance
+house_attend <- c(0, 0, 1, 0, 0, 1, 1)
+house_attend <- matrix(house_attend, nrow = 7, ncol = 50)
+write.table(house_attend, file = "house_attend.txt", sep = " ", row.names = FALSE,
+            col.names = FALSE)
+
+attend_school <- c(1, 1, 0, 1, 1, 1, 1)
+attend_school <- matrix(attend_school, nrow = 7, ncol = 50)
+write.table(attend_school, file = "attend_school.txt", sep = " ", row.names = FALSE,
+            col.names = FALSE)
+
+attend_comm <- c(1, 1, 0, 1, 1, 0, 1)
+attend_comm <- matrix(attend_comm, nrow = 7, ncol = 50)
+write.table(attend_comm, file = "attend_comm.txt", sep = " ", row.names = FALSE,
+            col.names = FALSE)
+
+attend_hyponeg <- rep(1, 100)
 ```
 
 
@@ -298,20 +335,20 @@ merida_block_sf$P_18YMAS <- as.numeric(merida_block_sf$P_18YMAS)
 # calculate adult population
 clusters_sf$P_18YMAS <- as.numeric(clusters_sf$P_18YMAS)
 cluster_adult_population <- clusters_sf %>% 
-  group_by(CLUSTER, trial_arm.x) %>% 
+  group_by(CLUSTER, trial_arm) %>% 
   summarize(Cluster_Adult_Population = sum(P_18YMAS, na.rm = TRUE)) %>% 
   st_drop_geometry()
 
 # calculate kid population
 cluster_kid_population <- clusters_sf %>% 
-  group_by(CLUSTER, trial_arm.x) %>% 
+  group_by(CLUSTER, trial_arm) %>% 
   summarize(Cluster_Kid_Population = sum(POBTOT) - 
               sum(P_18YMAS, na.rm = TRUE)) %>% 
   st_drop_geometry()
 
 by_arm <- cluster_adult_population %>% 
-  left_join(cluster_kid_population, by = c("CLUSTER", "trial_arm.x")) %>% 
-  group_by(trial_arm.x) %>% 
+  left_join(cluster_kid_population, by = c("CLUSTER", "trial_arm")) %>% 
+  group_by(trial_arm) %>% 
   summarize(adult_pop = sum(Cluster_Adult_Population),
             kid_pop = sum(Cluster_Kid_Population))
 ```
@@ -739,15 +776,18 @@ child_cases <- denv_kid_cases_sf %>%
 ## trial arm info
 trial_arm <- clusters_sf %>% 
   group_by(CLUSTER, MZTIRS) %>% 
-  summarize(trial_arm = mean(trial_arm.x)) %>% 
+  summarize(trial_arm = mean(trial_arm)) %>% 
   st_drop_geometry()
 
+trial_arm$CLUSTER <- as.numeric(trial_arm$CLUSTER)
 reg_dat <- reg_dat_orig %>% 
   right_join(trial_arm, by = c("CLUSTER", "MZTIRS")) %>% 
   left_join(adult_cases, by = c("CLUSTER", "MZTIRS")) %>% 
   left_join(child_cases, by = c("CLUSTER", "MZTIRS")) %>% 
-  mutate(num_cases_adult = ifelse(is.na(num_cases_adult), 0, num_cases_adult),
-         num_cases_kids = ifelse(is.na(num_cases_kids), 0, num_cases_kids))
+  mutate(num_cases_total = ifelse(is.na(num_cases_total), 0, num_cases_total),
+         num_cases_adult = ifelse(is.na(num_cases_adult), 0, num_cases_adult),
+         num_cases_kids = ifelse(is.na(num_cases_kids), 0, num_cases_kids)) %>% 
+  filter(MZTIRS != 0)
 
 ## number for total population
 # clbl_adult_pop <- clusters_sf %>% 
@@ -781,6 +821,7 @@ test_pop <- clusters_sf %>%
 # ## any cases where the adult population is greater than the actual population?
 # test_pop %>% filter(adult_pop > population)
 
+test_pop$CLUSTER <- as.numeric(test_pop$CLUSTER)
 reg_dat <- reg_dat %>% 
   left_join(test_pop, by = c("CLUSTER", "MZTIRS")) %>% 
   mutate(num_cases_total = ifelse(is.na(num_cases_total), 0, num_cases_total),
@@ -812,6 +853,34 @@ reg_dat <- reg_dat %>%
 # ok not this...this one only looks at cases, doesn't account for rest of population
 ```
 
+adding mosquito counts / density
+```{r}
+mosq_counts_clbl <- ento %>% 
+  group_by(id_cluster, id_block) %>% 
+  summarize(ae_fem_total = sum(`Sum of ae_fem`))
+mosq_counts_clbl <- mosq_counts_clbl[-1,]
+mosq_counts_clbl$id_cluster <- as.numeric(mosq_counts_clbl$id_cluster)
+mosq_counts_clbl$id_block <- as.numeric(mosq_counts_clbl$id_block)
+
+# bind mosquito counts and trial arm
+mosq_counts_clbl <- mosq_counts_clbl %>% 
+  left_join(cluster_assignment, by = c("id_cluster" = "CLUSTER"))
+
+
+reg_dat_mosq <- reg_dat %>% 
+  full_join(mosq_counts_clbl, by = c("CLUSTER" = "id_cluster", 
+                                     "MZTIRS" = "id_block",
+                                     "trial_arm" = "trial_arm")) %>% 
+  mutate(num_cases_total = ifelse(is.na(num_cases_total), 0, num_cases_total),
+         num_cases_adult = ifelse(is.na(num_cases_adult), 0, num_cases_adult),
+         num_cases_kids = ifelse(is.na(num_cases_kids), 0, num_cases_kids)) %>% 
+  arrange(CLUSTER, MZTIRS)
+# note: we don't have mosquito density for every single block?
+
+#reg_dat_mosq %>% filter(is.na(num_cases_total))
+```
+
+
 ## no offset
 ### everyone
 ```{r}
@@ -833,6 +902,43 @@ summary(pois_fit)
 1 - exp(coef(pois_fit)["trial_arm"])
 1 - exp(confint(pois_fit))
 ```
+
+mosquito density instead of treatment
+```{r}
+# only by cluster...
+reg_dat_cluster_mosq <- reg_dat_mosq %>% 
+  group_by(CLUSTER, trial_arm) %>% 
+  filter(!(CLUSTER == 53 & MZTIRS == 74)) %>% # this didn't show up in the cluster shapefile...
+  summarize(total_cases = sum(num_cases_total),
+            total_population = round(sum(population), 0),
+            total_cases_adult = sum(num_cases_adult),
+            total_pop_adult = sum(adult_pop),
+            total_cases_kids = sum(num_cases_kids),
+            total_pop_kids = round(sum(child_pop), 0),
+            total_mosquito_density = sum(ae_fem_total, na.rm = TRUE))
+
+# with and without offset
+# want: cases within a cluster, denominator, trial arm
+pois_mosq_replace <- glm(total_cases ~ total_mosquito_density, family = poisson(link = "log"), 
+                data = reg_dat_cluster_mosq)
+summary(pois_mosq_replace)
+exp(coef(pois_mosq_replace)["total_mosquito_density"])
+exp(confint(pois_mosq_replace))
+```
+A one unit increase in mosquito density (no. mosquitoes per house) multiplies expected number of cases by 1.000512 (i.e., exp(coef(pois_mosq_replace)["total_mosquito_density"]))
+
+Or since density is defined as number of mosquitoes per house, then like. an increase of 10 mosquitoes per house would be `r exp(10 * coef(pois_mosq_replace)["total_mosquito_density"])` = 1.005136. which is. not that much of a change? soooo is the implication that the effect of mosquito density on cases is not very strong????
+
+uhhhhhhh ok let's try with both density and treatment
+```{r}
+pois_mosq <- glm(total_cases ~ trial_arm + total_mosquito_density, 
+                         family = poisson(link = "log"), 
+                         data = reg_dat_cluster_mosq)
+summary(pois_mosq)
+1 - exp(coef(pois_mosq)["trial_arm"])
+1 - exp(confint(pois_mosq))
+```
+ok would this be the direct effect of treatment NOT mediated (???) through mosquito density? 
 
 ### adults only
 ```{r}

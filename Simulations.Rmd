@@ -34,10 +34,13 @@ sinave_dengue_cases <- here::here("data", "SINAVE_Data",
 # incidence in merida??
 city_cases_by_week <- sinave_dengue_cases %>% 
   count(Week_onset, name = "cases_per_week")
+write.table(city_cases_by_week, file = "city_cases_by_week.txt", sep = " ",
+            row.names = FALSE)
+
 ## divided by population...
 yuc_pop <- read.csv("RESAGEBURB2020 - 31 Yucatán.csv")
 
-I_m <- city_cases_by_week$cases_per_week / yuc_pop$POBTOT[1]
+I_m <- city_cases_by_week$cases_per_week #/ yuc_pop$POBTOT[1]
 
 
 #there are a lot of cases at the beginning of the year here...are they part of the '23 outbreak?
@@ -81,9 +84,9 @@ sim_pop <- function(n_clusters = 50, n_per_cluster, n_per_block,
 }
 
 # first simulate trial population?
-n_clusters <- 6 # must be even number (half control, half trial)
-n_per_cluster <- 50
-n_per_block <- 5
+n_clusters <- 10 # must be even number (half control, half trial)
+n_per_cluster <- 500
+n_per_block <- 50
 
 min_age <- 1 # youngest age
 max_age <- 82 # oldest age
@@ -96,7 +99,9 @@ trial_pop <- sim_pop(n_clusters, n_per_cluster, n_per_block)
 ## model parameters
 ```{r}
 # parameters
-alpha <- 2
+## alpha: cum. hazard of infection from infectious i in same block on susceptible j
+alpha <- -log(45/49)
+## beta: cum. hazard of infection from infectious i in same cluster, different block on sus. j
 beta <- 0
 gamma <- 0
 r <- 1
@@ -108,7 +113,7 @@ max_gen_time <- 90
 trial_start <- 1 # first week of the year
 trial_end <- nrow(city_cases_by_week) # 52 is the last week of the year but we don't have city incidence data for that???
 
-# vector of generation time density given the parameters; 
+# vector of generation time pmf given the parameters; 
 # evaluated at each time point
 gen_time <- function(Gmu, Gs2, max_gen_time) {
   shape <- Gmu^2 / Gs2
@@ -116,20 +121,21 @@ gen_time <- function(Gmu, Gs2, max_gen_time) {
   
   i <- 0:max_gen_time
   
-  genDensity <- pgamma(i + 1, shape = shape, scale = scale) -
+  genProb <- pgamma(i + 1, shape = shape, scale = scale) -
                 pgamma(i,     shape = shape, scale = scale)
   
-  return(genDensity)
+  return(genProb)
 }
 
-gen_density <- gen_time(Gmu, Gs2, max_gen_time)
-plot(gen_density)
+# probability that the generation time = [index]
+gen_prob <- gen_time(Gmu, Gs2, max_gen_time)
+# plot(gen_prob)
 ```
 
 infect population
 ```{r}
-  
-infect_pop <- function(trial_pop, gen_density, initially_infected = 0) {
+infect_pop <- function(trial_pop, gen_prob, initially_infected = 1, 
+                       alpha = alpha, beta = beta, gamma = gamma, r = r) {
   
   N <- nrow(trial_pop)
   trial_pop$infected <- 0
@@ -157,9 +163,7 @@ infect_pop <- function(trial_pop, gen_density, initially_infected = 0) {
     new_infections <- c()
     
     for (j in 1:N){
-      if (trial_pop$infected[j] == 1) { 
-        next 
-      }
+      if (trial_pop$infected[j] == 1) { next }
       
       lambda_jb <- 0
       lambda_jc <- 0
@@ -171,13 +175,13 @@ infect_pop <- function(trial_pop, gen_density, initially_infected = 0) {
       for (i in same_block){
         if (trial_pop$infected[i] == 1) {
           dt <- t - trial_pop$tau[i]
-          if (dt >= 0 & dt <= max_gen_time){ 
+          if (dt <= max_gen_time){ 
             if (trial_pop$TIRS[i] == 1) {
-              # dt + 1 since i in the generation time function starts at 0
-              lambda_jb <- lambda_jb + r * alpha * gen_density[dt]
+              lambda_jb <- lambda_jb + r * alpha * gen_prob[dt]
+              # treatment reduction * cum. hazard from i infecting j * prob that gen time is dt
             } else {
-              # dt + 1 since i in the generation time function starts at 0
-              lambda_jb <- lambda_jb + alpha * gen_density[dt]
+              lambda_jb <- lambda_jb + alpha * gen_prob[dt]
+              # cum. hazard from i infecting j * prob that gen time is dt
             }
           }
         }
@@ -190,15 +194,13 @@ infect_pop <- function(trial_pop, gen_density, initially_infected = 0) {
       for (i in diff_block) {
         if (trial_pop$infected[i] == 1) {
           dt <- t - trial_pop$tau[i]
-          if (dt >= 0 & dt <= max_gen_time){ 
+          if (dt <= max_gen_time){ 
             if (trial_pop$TIRS[i] == 1) {
-              # dt + 1 since i in the generation time function starts at 0
-              lambda_jc <- lambda_jc + r * beta * gen_density[dt]
+              lambda_jc <- lambda_jc + r * beta * gen_prob[dt]
             } else {
-              # dt + 1 since i in the generation time function starts at 0
-                lambda_jc <- lambda_jc + beta * gen_density[dt]
+              lambda_jc <- lambda_jc + beta * gen_prob[dt]
+              # cum. hazard from i infecting j * prob that gen time is dt
             }
-            
           }
         }
       }
@@ -206,8 +208,9 @@ infect_pop <- function(trial_pop, gen_density, initially_infected = 0) {
       # merida FOI
       for (z in 1:(t-1)) {
         dt <- t - z
-        if (dt >= 0 & dt <= max_gen_time) {
-          lambda_jm <- lambda_jm + gamma * I_m[z] * gen_density[t - z]
+        if (dt <= max_gen_time) {
+          lambda_jm <- lambda_jm + gamma * I_m[z] * gen_prob[t - z]
+          # cum. hazard from a case in merid * cases in merida * prob gen time is dt
         }
       }
       
@@ -226,11 +229,6 @@ infect_pop <- function(trial_pop, gen_density, initially_infected = 0) {
       # probability of infection given hazard
       p_j <- 1 - exp(-lambda_j)
       
-      if (is.na(lambda_j)) {
-        print(list(t = t, j = j))
-        stop("lambda_j is NA")
-      }
-      
       # is j infected or not?
       if (runif(1) < p_j) {
         new_infections <- c(new_infections, j)
@@ -241,54 +239,221 @@ infect_pop <- function(trial_pop, gen_density, initially_infected = 0) {
       trial_pop$infected[new_infections] <- 1
       trial_pop$tau[new_infections] <- t
     }
-    
-    if (t == 2) {
-      cat("j =", j, "num infectious in cluster =",
-      sum(trial_pop$infected[same_cluster]), "\n")
-    }
   }
   lambda_df <- do.call(rbind, lambdas[1:(counter-1)])
   
   return(list(trial_pop = trial_pop, lambda_df = lambda_df))
 }
 
-infected_pop <- infect_pop(trial_pop, gen_density, 1)
+# alpha <- -log(45/49), beta <- 0, gamma <- 0, r <- 1;
+# n_clusters <- 10, n_per_cluster <- 500, n_per_block <- 50
+infected_pop <- infect_pop(trial_pop, gen_prob, 1)
 ```
+
+## other situations i need to include?
+- differences due to age
+- differences due to spatial transmission
+    - would this just be what was done above?
+- differences due to reporting type (under-, over-reporting)
+- differences due to differing cluster population sizes?
 
 
 # Summary Statistics
 of the simulated populations
 ```{r}
-# epidemic curve compared to real data :')
-incidence_df <- infected_pop$trial_pop %>%
-  filter(is.finite(tau)) %>%
-  count(tau, name = "cases") %>%
-  complete(tau = 1:trial_end, fill = list(cases = 0)) %>%
-  rename(time = tau) %>% 
-  mutate(case_rate = cases / (n_clusters*n_per_cluster))
-
-real_df <- data.frame(
-  time = 1:nrow(city_cases_by_week),
-  case_rate = city_cases_by_week$cases_per_week / yuc_pop$POBTOT[1])
-
-ggplot() +
-  geom_line(data = incidence_df, aes(time, case_rate), color = "blue") +
-  geom_line(data = real_df, aes(time, case_rate), color = "red") +
-  labs(title = "Simulated (blue) vs Real (red)") +
-  theme_classic()
-
-# final epidemic size? attack rate?
-mean(infected_pop$trial_pop[,6])
-
-# number of cases at the beginning ?
-head(incidence_df, 10)
-
-# avg of each componenet?
-mean(infected_pop$lambda_df[,  3]) # block
-mean(infected_pop$lambda_df[,  4]) # cluster
-mean(infected_pop$lambda_df[,  5]) # city 
-mean(infected_pop$lambda_df[,  6]) # total hazard 
+get_summary <- function(infected_pop){
+  # epidemic curve compared to real data :')
+  incidence_df <- infected_pop$trial_pop %>%
+    filter(is.finite(tau)) %>%
+    count(tau, name = "cases") %>%
+    complete(tau = 1:trial_end, fill = list(cases = 0)) %>%
+    rename(time = tau) %>% 
+    mutate(case_rate = cases / (n_clusters*n_per_cluster))
+  
+  real_df <- data.frame(
+    time = 1:nrow(city_cases_by_week),
+    case_rate = city_cases_by_week$cases_per_week / yuc_pop$POBTOT[1])
+  
+  plot <- ggplot() +
+    geom_line(data = incidence_df, aes(time, case_rate), color = "blue") +
+    geom_line(data = real_df, aes(time, case_rate), color = "red") +
+    labs(title = "Simulated (blue) vs Real (red)") +
+    theme_classic()
+  
+  # number of cases at the beginning ?
+  head <- head(incidence_df, 10)
+  
+  # R_0? hopefully :')
+  ## incidence at time t
+  tau <- infected_pop$trial_pop$tau # infection times
+  cases <- as.numeric(table(tau))
+  time_index <- as.numeric(names(table(tau)))
+  
+  ## poisson regression, assuming early exponential growth
+  df <- data.frame(
+    time = time_index,
+    cases = cases)
+  
+  fit <- glm(cases ~ time, family = poisson(link = "log"), data = df)
+  
+  r_hat <- coef(fit)["time"] # estimate of growth rate?
+  # # or if i have a longer thing:
+  # df_early <- subset(df, time <= 15)
+  # fit <- glm(cases ~ time, family = poisson(link = "log"), data = df_early)
+  # r_hat <- coef(fit)["time"]
+  
+  ## generation time to get R_0
+  g <- gen_time(Gmu, Gs2, max_gen_time)
+  t <- 0:max_gen_time
+  
+  ## R_0, from Wallinga & Lipsitch (2007), equation 2.7
+  R0 <- 1 / sum(g * exp(-r_hat * t))
+  
+  # # final epidemic size? attack rate?
+  # mean(infected_pop$trial_pop[,6])
+  # avg of each componenet?
+  block_avg <- mean(infected_pop$lambda_df[,  3]) # block
+  cluster_avg <- mean(infected_pop$lambda_df[,  4]) # cluster
+  city_avg <- mean(infected_pop$lambda_df[,  5]) # city 
+  total_hazard<- mean(infected_pop$lambda_df[,  6]) # total hazard
+  
+  return(list(plot, head, R0 = R0, block_avg_hazard = block_avg, 
+              cluster_avg_hazard = cluster_avg, city_avg_hazard = city_avg, 
+              total_avg_hazard = total_hazard))
+}
 ```
+
+# tests
+block size bigger
+```{r}
+# R0 = 8
+alpha <- -log(45/49); beta <- 0; gamma <- 0; r <- 1
+n_clusters <- 10; n_per_cluster <- 1000; n_per_block <- 100 
+big_trial_pop <- sim_pop(n_clusters, n_per_cluster, n_per_block)
+
+# alpha <- -log(45/49); beta <- 0; gamma <- 0; r <- 1
+Sys.time()
+alpha_pop <- infect_pop(big_trial_pop, gen_prob, 1)
+Sys.time()
+```
+
+```{r}
+get_summary(alpha_pop)
+```
+
+
+block size smaller, everything else constant
+```{r}
+# R_0 = 4
+n_clusters <- 10; n_per_cluster <- 1000; n_per_block <- 50
+smaller_trial_pop <- sim_pop(n_clusters, n_per_cluster, n_per_block) # is n per block too small???
+
+# alpha <- -log(45/49); beta <- 0; gamma <- 0; r <- 1
+Sys.time()
+alpha_small_pop <- infect_pop(smaller_trial_pop, gen_prob, 1)
+Sys.time()
+```
+
+```{r}
+get_summary(alpha_small_pop)
+```
+
+```{r}
+# cluster R0 = 2
+# 2  = (n_cluster - n_block) * (1 - exp(-beta))
+Sys.time()
+beta_pop <- infect_pop(big_trial_pop, gen_prob, 1, alpha = 0, 
+                        beta = -log(948/950), gamma = 0, r = 1)
+Sys.time()
+```
+
+```{r}
+get_summary(beta_pop)
+```
+
+
+```{r}
+# block R0 = 4, cluster R0 = 2
+# 2  = (n_cluster - n_block) * (1 - exp(-beta))
+Sys.time()
+ab_pop <- infect_pop(big_trial_pop, gen_prob, 1, alpha = -log(45/49), 
+                        beta = -log(948/950), gamma = 0, r = 1)
+Sys.time()
+```
+
+```{r}
+get_summary(ab_pop)
+```
+gamma
+```{r}
+Sys.time()
+gamma_pop_00005 <- infect_pop(big_trial_pop, gen_prob, 1, alpha = 0, 
+                        beta = 0, gamma = 0.00005, r = 1)
+Sys.time()
+```
+
+```{r}
+get_summary(gamma_pop)
+# fraction of infection pressure coming from the city
+mean(gamma_pop$lambda_df$city / gamma_pop$lambda_df$total_hazard)
+```
+lol so way too high, gamma dominating everything (gamma_pop)
+
+```{r}
+get_summary(gamma_pop_00005)
+# fraction of infection pressure coming from the city
+mean(gamma_pop_00005$lambda_df$city / gamma_pop_00005$lambda_df$total_hazard)
+```
+gamma = 0.00005, (gamma_pop_00005)
+wellllll case rate is much higher but it's around the same time ??????
+
+```{r}
+Sys.time()
+gamma_pop_0000005 <- infect_pop(big_trial_pop, gen_prob, 1, alpha = 0, 
+                        beta = 0, gamma = 0.0000005, r = 1)
+Sys.time()
+```
+
+```{r}
+get_summary(gamma_pop_0000005)
+```
+ok! maybe too small now !?
+
+```{r}
+Sys.time()
+gamma_pop_000005 <- infect_pop(big_trial_pop, gen_prob, 1, alpha = 0, 
+                        beta = 0, gamma = 0.000005, r = 1)
+Sys.time()
+```
+
+```{r}
+get_summary(gamma_pop_000005)
+```
+
+all
+```{r}
+Sys.time()
+abg_pop <- infect_pop(big_trial_pop, gen_prob, 1, alpha = -log(45/49), 
+                        beta = -log(948/950), gamma = 0.0000005, r = 1)
+Sys.time()
+```
+
+```{r}
+get_summary(abg_pop)
+```
+```{r}
+# proportion from each
+mean(abg_pop$lambda_df$block / abg_pop$lambda_df$total_hazard)
+mean(abg_pop$lambda_df$cluster / abg_pop$lambda_df$total_hazard)
+mean(abg_pop$lambda_df$city / abg_pop$lambda_df$total_hazard)
+```
+
+
+# Parameter Testing?
+```{r}
+
+```
+
 
 
 # Model
