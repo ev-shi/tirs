@@ -13,7 +13,8 @@ library(lubridate)
 library(ggplot2)
 ```
 
-# Mérida Incidence
+# Data
+## Mérida Incidence
 ```{r}
 ## SINAVE case data, only dengue
 sinave_dengue_cases <- here::here("data", "SINAVE_Data", 
@@ -63,9 +64,14 @@ sinave_24 <- here::here("data", "SINAVE_Data",
 ```
 
 # Simulation
-## trial pop structure
+## Functions
+
 ```{r}
 set.seed(12345)
+```
+
+### Trial Population Structure
+```{r}
 sim_pop <- function(n_clusters = 50, n_per_cluster, n_per_block, 
                     min_age = 1, max_age = 82){
   
@@ -82,37 +88,11 @@ sim_pop <- function(n_clusters = 50, n_per_cluster, n_per_block,
                                       trial_pop_df$Block, sep = "")
   return(trial_pop_df)
 }
-
-# first simulate trial population?
-n_clusters <- 10 # must be even number (half control, half trial)
-n_per_cluster <- 500
-n_per_block <- 50
-
-min_age <- 1 # youngest age
-max_age <- 82 # oldest age
-
-trial_pop <- sim_pop(n_clusters, n_per_cluster, n_per_block)
 ```
 
-
-# Simulate Outcomes??
-## model parameters
+### Infect Population
+#### Generation Time
 ```{r}
-# parameters
-## alpha: cum. hazard of infection from infectious i in same block on susceptible j
-alpha <- -log(45/49)
-## beta: cum. hazard of infection from infectious i in same cluster, different block on sus. j
-beta <- 0
-gamma <- 0
-r <- 1
-
-Gmu <- 2 # 17 days?
-Gs2 <- 1  # 2 days?
-max_gen_time <- 90
-
-trial_start <- 1 # first week of the year
-trial_end <- nrow(city_cases_by_week) # 52 is the last week of the year but we don't have city incidence data for that???
-
 # vector of generation time pmf given the parameters; 
 # evaluated at each time point
 gen_time <- function(Gmu, Gs2, max_gen_time) {
@@ -126,16 +106,12 @@ gen_time <- function(Gmu, Gs2, max_gen_time) {
   
   return(genProb)
 }
-
-# probability that the generation time = [index]
-gen_prob <- gen_time(Gmu, Gs2, max_gen_time)
-# plot(gen_prob)
 ```
 
-infect population
+#### Infections
 ```{r}
 infect_pop <- function(trial_pop, gen_prob, initially_infected = 1, 
-                       alpha = alpha, beta = beta, gamma = gamma, r = r) {
+                       alpha, beta, gamma, r) {
   
   N <- nrow(trial_pop)
   trial_pop$infected <- 0
@@ -244,21 +220,9 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
   
   return(list(trial_pop = trial_pop, lambda_df = lambda_df))
 }
-
-# alpha <- -log(45/49), beta <- 0, gamma <- 0, r <- 1;
-# n_clusters <- 10, n_per_cluster <- 500, n_per_block <- 50
-infected_pop <- infect_pop(trial_pop, gen_prob, 1)
 ```
 
-## other situations i need to include?
-- differences due to age
-- differences due to spatial transmission
-    - would this just be what was done above?
-- differences due to reporting type (under-, over-reporting)
-- differences due to differing cluster population sizes?
-
-
-# Summary Statistics
+### Summary Statistics
 of the simulated populations
 ```{r}
 get_summary <- function(infected_pop){
@@ -283,47 +247,70 @@ get_summary <- function(infected_pop){
   # number of cases at the beginning ?
   head <- head(incidence_df, 10)
   
-  # R_0? hopefully :')
-  ## incidence at time t
-  tau <- infected_pop$trial_pop$tau # infection times
-  cases <- as.numeric(table(tau))
-  time_index <- as.numeric(names(table(tau)))
-  
-  ## poisson regression, assuming early exponential growth
-  df <- data.frame(
-    time = time_index,
-    cases = cases)
-  
-  fit <- glm(cases ~ time, family = poisson(link = "log"), data = df)
-  
-  r_hat <- coef(fit)["time"] # estimate of growth rate?
-  # # or if i have a longer thing:
-  # df_early <- subset(df, time <= 15)
-  # fit <- glm(cases ~ time, family = poisson(link = "log"), data = df_early)
-  # r_hat <- coef(fit)["time"]
-  
-  ## generation time to get R_0
-  g <- gen_time(Gmu, Gs2, max_gen_time)
-  t <- 0:max_gen_time
-  
-  ## R_0, from Wallinga & Lipsitch (2007), equation 2.7
-  R0 <- 1 / sum(g * exp(-r_hat * t))
-  
-  # # final epidemic size? attack rate?
-  # mean(infected_pop$trial_pop[,6])
-  # avg of each componenet?
-  block_avg <- mean(infected_pop$lambda_df[,  3]) # block
-  cluster_avg <- mean(infected_pop$lambda_df[,  4]) # cluster
-  city_avg <- mean(infected_pop$lambda_df[,  5]) # city 
-  total_hazard<- mean(infected_pop$lambda_df[,  6]) # total hazard
-  
-  return(list(plot, head, R0 = R0, block_avg_hazard = block_avg, 
-              cluster_avg_hazard = cluster_avg, city_avg_hazard = city_avg, 
-              total_avg_hazard = total_hazard))
+  return(list(plot, head))
 }
 ```
 
-# tests
+1. epidemic curve
+2. first few cases
+3. R_t, effective reproductive number (average number of secondary cases?)
+
+
+## Parameter Testing
+### Set Up
+Trial Population:
+```{r}
+min_age <- 1 # youngest age
+max_age <- 82 # oldest age
+
+# Population size
+n_clusters <- 10; n_per_cluster <- 500; n_per_block <- 50
+
+trial_pop <- sim_pop(n_clusters, n_per_cluster, n_per_block)
+```
+
+Model Parameters:
+```{r}
+# parameters
+alpha <- -log(45/49); beta <- 0; gamma <- 0; r <- 1
+Gmu <- 2; Gs2 <- 1; max_gen_time <- 90 # 17 days?; 2 days?
+
+trial_start <- 1 # first week of the year
+trial_end <- nrow(city_cases_by_week) # 52 is the last week of the year but we don't have city incidence data for that??? so 50
+
+# probability that the generation time = [index]
+gen_prob <- gen_time(Gmu, Gs2, max_gen_time)
+```
+
+Get infected population:
+```{r}
+# alpha <- -log(45/49), beta <- 0, gamma <- 0, r <- 1;
+# n_clusters <- 10, n_per_cluster <- 500, n_per_block <- 50
+infected_pop <- infect_pop(trial_pop, gen_prob, 1, alpha = alpha, beta = beta,
+                           gamma = gamma, r = r)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# prev tests
 block size bigger
 ```{r}
 # R0 = 8
@@ -340,7 +327,6 @@ Sys.time()
 ```{r}
 get_summary(alpha_pop)
 ```
-
 
 block size smaller, everything else constant
 ```{r}
@@ -447,109 +433,3 @@ mean(abg_pop$lambda_df$block / abg_pop$lambda_df$total_hazard)
 mean(abg_pop$lambda_df$cluster / abg_pop$lambda_df$total_hazard)
 mean(abg_pop$lambda_df$city / abg_pop$lambda_df$total_hazard)
 ```
-
-
-# Parameter Testing?
-```{r}
-
-```
-
-
-
-# Model
-- no imputing infection time --- assume between 3-10 days, as expected for dengue
-
-## mcmcParams
-This program estimates parameters from the infection data and outputs those estimates
-input:
-output:
-
-Basic structure of this part of the model:
-```{r}
-# libraries
-library(Rcpp)
-```
-
-### functions
-```{r}
-# likelihood
-likelihood <- function()
-```
-
-
-
-MCMC loop
-```{r}
-# main(nSims, burnIn, filePaths, seed){
-    # seed
-    # read files with detailed and global data e.g., nClusers, nIndv
-    # computations (mcmc)
-        # initialize (starting values for MCMC)
-        # determine time range (depending on infection time & diagnosis)
-        # mcmc itrations (for loop)
-            # proposes new parameters
-            # proposal for random walk
-            # generation time density?
-                # restricting to cses where generation time density is well-defined
-            # candidateLogLik = Likelihood()
-            # selection (metropolis-hastings)
-            # save results 
-# }
-
-set.seed(12345)
-
-# read...files...
-n_sim <- 10
-
-# loop / MCMC iterations
-nSim <- 10
-init_alpha <- 0.2
-init_beta <- 0.46
-init_gamma <- 0.345
-init_Gmu <- 0.76
-init_Gs2 <- 0.23
-sourceCpp('mcmc.cpp')
-mcmc(current_alpha, nSim)
-```
-
-
-
-## transChains
-This program takes the estimated parameters and infers transmission chains
-input: 
-output:
-
-Basic structure of this part of the model:
-```{r}
-# libraries
-
-# main{
-    # output file name
-    # for each parameter set:
-        # generation time distribution
-        # transmission chain reconstruction
-            # compute hazard of infection
-            # determines possible infectors
-            # samples/assigns most likely infector
-        # store and print output
-# }
-```
-
-## tirsFunctions
-- use Rcpp? have the calculations done in C?se
-```{r}
-# ReadFiles1: get global variables, number of indivudals, sigmas for mcmc parameters
-# ReadFiles2: reads individuals data, community incidence, and infection times
-
-# genDensity: computes vector for generation time density given the params
-
-# FOI_bcd: computes the different lambdas (FOIs) from block, cluster, community
-# Qo_bcd: computes sum of the exponential component for the survival function for observed cases
-# Qu_bcd: computes sum of the exponential component for the survival function for unobserved cases
-
-# Likelihood: computes log-likelihood given the parameter set
-
-# ChainRec: assigns an infector to each individual
-
-```
-
