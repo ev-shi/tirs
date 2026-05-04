@@ -339,6 +339,10 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
   rr_peak <- c()
   time_diff_at_peaks <- c()
   rr_peak_same_time <- c()
+  control_list <- list()
+  tirs_list <- list()
+  offspring_controls <- c()
+  offspring_tirs <- c()
   
   real_df <- data.frame(
     time = 1:nrow(city_cases_by_week),
@@ -360,12 +364,43 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
     
     sim_list[[s]] <- incidence
     
+    ## by trial arm
+    control <- infected_pop$trial_pop %>% 
+      filter(is.finite(tau)) %>% 
+      filter(TIRS == 0) %>% 
+      count(tau, name = "cases") %>% 
+      complete(tau = 1:trial_end, fill = list(cases = 0)) %>%
+      rename(time = tau) %>% 
+      mutate(case_rate = cases / (n_clusters*n_per_cluster),
+             sim = s)
+    control_list[[s]] <- control
+    
+    tirs <- infected_pop$trial_pop %>% 
+      filter(is.finite(tau)) %>% 
+      filter(TIRS == 1) %>% 
+      count(tau, name = "cases") %>% 
+      complete(tau = 1:trial_end, fill = list(cases = 0)) %>%
+      rename(time = tau) %>% 
+      mutate(case_rate = cases / (n_clusters*n_per_cluster),
+             sim = s)
+    tirs_list[[s]] <- tirs
+    
     # count offspring
     index_ids <- infected_pop$trial_pop$ID[infected_pop$trial_pop$index_case == 1]
     count_offspring <- sapply(index_ids, function(id) {
       sum(infected_pop$trial_pop$infector == id, na.rm = TRUE)
     })
     offspring_index[s] <- mean(count_offspring)
+    
+    control_ids <- infected_pop$trial_pop %>% filter(TIRS == 0)
+    control_offspring <- table(na.omit(control_ids$infector))
+    offspring_count_controls <- as.numeric(control_offspring)
+    offspring_controls[s] <- mean(offspring_count_controls)
+    
+    tirs_ids <- infected_pop$trial_pop %>% filter(TIRS == 1)
+    tirs_offspring <- table(na.omit(tirs_ids$infector))
+    offspring_count_tirs <- as.numeric(tirs_offspring)
+    offspring_tirs[s] <- mean(offspring_count_tirs)
     
     # find peak incidence in simulation
     study_peak <- max(incidence$case_rate)
@@ -400,10 +435,46 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
     labs(title = paste0("Average Case Rate over ", num_sims, " Simulations (Blue) vs. Mérida Incidence Rate")) +
     theme_classic()
   
+  all_controls <- bind_rows(control_list)
+  all_tirs <- bind_rows(tirs_list)
+  epi_curve_controls <- all_controls %>% 
+    group_by(time) %>% 
+    summarize(mean_rate = mean(case_rate),
+              lower = quantile(case_rate, 0.025),
+              upper = quantile(case_rate, 0.975))
+  epi_curve_tirs <- all_tirs %>% 
+    group_by(time) %>% 
+    summarize(mean_rate = mean(case_rate),
+              lower = quantile(case_rate, 0.025),
+              upper = quantile(case_rate, 0.975))
+  epi_curve_arms <- ggplot() +
+    geom_ribbon(data = epi_curve_controls,
+                aes(x = time, ymin = lower, ymax = upper),
+                fill = "lightgreen", alpha = 0.2) +
+    geom_line(data = epi_curve_controls,
+              aes(time, mean_rate),
+              color = "lightgreen") +
+    geom_ribbon(data = epi_curve_tirs,
+                aes(x = time, ymin = lower, ymax = upper),
+                fill = "pink", alpha = 0.2) +
+    geom_line(data = epi_curve_tirs,
+              aes(time, mean_rate),
+              color = "pink") +
+    labs(title = paste0("Average Case Rate over ", num_sims, " Simulations for Control (blue) \n and Intervention (Red) Arms")) +
+    theme_classic()
+  
   # R_0
   avg_offspring <- round(mean(offspring_index), 2)
   var_offspring <- round(var(offspring_index), 2)
   hist_offspring <- hist(offspring_index)
+  
+  ## for trial arms
+  avg_offspring_controls <- round(mean(offspring_controls), 2)
+  var_offspring_controls <- round(var(offspring_controls), 2)
+  hist_offspring_controls <- hist(offspring_controls)
+  avg_offspring_tirs <- round(mean(offspring_tirs), 2)
+  var_offspring_tirs <- round(var(offspring_tirs), 2)
+  hist_offspring_tirs <- hist(offspring_tirs)
   
   # rate ratio between study population and merida
   avg_rr_peak <- mean(rr_peak, na.rm = TRUE)
@@ -421,7 +492,11 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
          "Average Difference in Weeks Between Simulated Study Peak and City Peak" 
          = avg_time_diff,
          "Average RR at Peak Simulated Incidence" = avg_rr_peak_same_time,
-         "Variance of RR at Peak Simulated Incidence" = var_rr_peak_same_time))
+         "Variance of RR at Peak Simulated Incidence" = var_rr_peak_same_time,
+         epi_curve_arms, "Controls Average R_t" = 
+           avg_offspring_controls, "Variance of Controls R_t" = 
+           var_offspring_controls, "TIRS Average R_t" =
+           avg_offspring_tirs, "Variance of TIRS R_t" = var_offspring_tirs))
 }
 ```
 
@@ -462,183 +537,48 @@ Sys.time()
 ### gamma
 ```{r}
 Sys.time()
-alpha <- 0; beta <- 0; gamma <- 0.000005; r <- 1
-run_sims(50, trial_pop, gen_prob, 1, alpha, beta, gamma, r)
-Sys.time()
-```
-
-```{r}
-Sys.time()
-alpha <- 0; beta <- 0; gamma <- 0.00001; r <- 1
-run_sims(50, trial_pop, gen_prob, 1, alpha, beta, gamma, r)
-Sys.time()
-```
-
-added RR at peak simulated incidence
-```{r}
-Sys.time()
-alpha <- 0; beta <- 0; gamma <- 0.00001; r <- 1
-run_sims(5, trial_pop, gen_prob, 1, alpha, beta, gamma, r)
-Sys.time()
-```
-
-changed I_m from raw case counts to incidence in the infecting population function
-```{r}
-Sys.time()
-alpha <- 0; beta <- 0; gamma <- 0.00001; r <- 1
-run_sims(5, trial_pop, gen_prob, 1, alpha, beta, gamma, r)
-Sys.time()
-```
-
-```{r}
-Sys.time()
-alpha <- 0; beta <- 0; gamma <- 0.01; r <- 1
-run_sims(5, trial_pop, gen_prob, 1, alpha, beta, gamma, r)
-Sys.time()
-```
-
-### gamma
-```{r}
-Sys.time()
 alpha <- 0; beta <- 0; gamma <- 1; r <- 1
 run_sims(5, trial_pop, gen_prob, 1, alpha, beta, gamma, r)
 Sys.time()
 ```
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# prev tests
-block size bigger
+### r
 ```{r}
-# R0 = 8
-alpha <- -log(45/49); beta <- 0; gamma <- 0; r <- 1
-n_clusters <- 10; n_per_cluster <- 1000; n_per_block <- 100 
-big_trial_pop <- sim_pop(n_clusters, n_per_cluster, n_per_block)
-
-# alpha <- -log(45/49); beta <- 0; gamma <- 0; r <- 1
 Sys.time()
-alpha_pop <- infect_pop(big_trial_pop, gen_prob, 1)
+alpha <- 0; beta <- 0; gamma <- 1; r <- 0.5
+run_sims(5, trial_pop, gen_prob, 1, alpha, beta, gamma, r)
 Sys.time()
 ```
 
-```{r}
-get_summary(alpha_pop)
-```
-
-block size smaller, everything else constant
-```{r}
-# R_0 = 4
-n_clusters <- 10; n_per_cluster <- 1000; n_per_block <- 50
-smaller_trial_pop <- sim_pop(n_clusters, n_per_cluster, n_per_block) # is n per block too small???
-
-# alpha <- -log(45/49); beta <- 0; gamma <- 0; r <- 1
-Sys.time()
-alpha_small_pop <- infect_pop(smaller_trial_pop, gen_prob, 1)
-Sys.time()
-```
-
-```{r}
-get_summary(alpha_small_pop)
-```
-
-```{r}
-# cluster R0 = 2
-# 2  = (n_cluster - n_block) * (1 - exp(-beta))
-Sys.time()
-beta_pop <- infect_pop(big_trial_pop, gen_prob, 1, alpha = 0, 
-                        beta = -log(948/950), gamma = 0, r = 1)
-Sys.time()
-```
-
-```{r}
-get_summary(beta_pop)
-```
 
 
-```{r}
-# block R0 = 4, cluster R0 = 2
-# 2  = (n_cluster - n_block) * (1 - exp(-beta))
-Sys.time()
-ab_pop <- infect_pop(big_trial_pop, gen_prob, 1, alpha = -log(45/49), 
-                        beta = -log(948/950), gamma = 0, r = 1)
-Sys.time()
-```
+## Grid Search
 
-```{r}
-get_summary(ab_pop)
-```
-gamma
-```{r}
-Sys.time()
-gamma_pop_00005 <- infect_pop(big_trial_pop, gen_prob, 1, alpha = 0, 
-                        beta = 0, gamma = 0.00005, r = 1)
-Sys.time()
-```
 
-```{r}
-get_summary(gamma_pop)
-# fraction of infection pressure coming from the city
-mean(gamma_pop$lambda_df$city / gamma_pop$lambda_df$total_hazard)
-```
-lol so way too high, gamma dominating everything (gamma_pop)
 
-```{r}
-get_summary(gamma_pop_00005)
-# fraction of infection pressure coming from the city
-mean(gamma_pop_00005$lambda_df$city / gamma_pop_00005$lambda_df$total_hazard)
-```
-gamma = 0.00005, (gamma_pop_00005)
-wellllll case rate is much higher but it's around the same time ??????
 
-```{r}
-Sys.time()
-gamma_pop_0000005 <- infect_pop(big_trial_pop, gen_prob, 1, alpha = 0, 
-                        beta = 0, gamma = 0.0000005, r = 1)
-Sys.time()
-```
 
-```{r}
-get_summary(gamma_pop_0000005)
-```
-ok! maybe too small now !?
 
-```{r}
-Sys.time()
-gamma_pop_000005 <- infect_pop(big_trial_pop, gen_prob, 1, alpha = 0, 
-                        beta = 0, gamma = 0.000005, r = 1)
-Sys.time()
-```
 
-```{r}
-get_summary(gamma_pop_000005)
-```
 
-all
-```{r}
-Sys.time()
-abg_pop <- infect_pop(big_trial_pop, gen_prob, 1, alpha = -log(45/49), 
-                        beta = -log(948/950), gamma = 0.0000005, r = 1)
-Sys.time()
-```
 
-```{r}
-get_summary(abg_pop)
-```
-```{r}
-# proportion from each
-mean(abg_pop$lambda_df$block / abg_pop$lambda_df$total_hazard)
-mean(abg_pop$lambda_df$cluster / abg_pop$lambda_df$total_hazard)
-mean(abg_pop$lambda_df$city / abg_pop$lambda_df$total_hazard)
-```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
