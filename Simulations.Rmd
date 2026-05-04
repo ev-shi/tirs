@@ -78,9 +78,10 @@ sim_pop <- function(n_clusters = 50, n_per_cluster, n_per_block,
   n <- n_clusters * n_per_cluster 
   
   trial_pop_df <- data.frame(
+    "ID" = 1:n,
     "Cluster" = rep(1:n_clusters, each = n_per_cluster),
     "Block" = rep_len(1:round(n_per_cluster/n_per_block, 0), n_clusters),
-    "TIRS" = c(rep(0, n_per_cluster), rep(1, n_per_cluster)),
+    "TIRS" = rep(c(0, 1), each = n_per_cluster, length.out = n),
     "Age" = sample(min_age:max_age, n, replace = TRUE)
     )
   
@@ -116,6 +117,7 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
   N <- nrow(trial_pop)
   trial_pop$infected <- 0
   trial_pop$tau <- NA
+  trial_pop$infector <- NA
   
   lambda_df <- data.frame(
     time = integer(),
@@ -130,6 +132,8 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
   initial_ids <- sample(1:N, initially_infected)
   trial_pop$infected[initial_ids] <- 1
   trial_pop$tau[initial_ids] <- 1
+  trial_pop$index_case <- 0
+  trial_pop$index_case[initial_ids] <- 1
   
   lambdas <- vector("list", N * trial_end)
   counter <- 1
@@ -185,7 +189,7 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
       for (z in 1:(t-1)) {
         dt <- t - z
         if (dt <= max_gen_time) {
-          lambda_jm <- lambda_jm + gamma * I_m[z] * gen_prob[t - z]
+          lambda_jm <- lambda_jm + gamma * (I_m[z] / yuc_pop$POBTOT[1]) * gen_prob[t - z]
           # cum. hazard from a case in merid * cases in merida * prob gen time is dt
         }
       }
@@ -205,9 +209,46 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
       # probability of infection given hazard
       p_j <- 1 - exp(-lambda_j)
       
-      # is j infected or not?
+      # j becomes a new infection
       if (runif(1) < p_j) {
+        # possible infectors of j
+        sources <- c(same_block, diff_block, 0)
+        weights <- c(sapply(same_block, function(i) {
+          if (trial_pop$infected[i] == 1) {
+            dt <- t - trial_pop$tau[i]
+            if (dt <= max_gen_time){ 
+              base <- alpha * gen_prob[dt]
+              # hazard from i infecting j * prob that gen time is dt
+              if (trial_pop$TIRS[i] == 1) { base <- r * base }
+              return(base)
+            }
+          }
+          return(0)
+        }), sapply(diff_block, function(i){
+          if (trial_pop$infected[i] == 1) {
+            dt <- t - trial_pop$tau[i]
+            if (dt <= max_gen_time){ 
+              base <- beta * gen_prob[dt]
+              if (trial_pop$TIRS[i] == 1) { base <- base * r }
+              return(base)
+            }
+          }
+          return(0)
+        }), lambda_jm)
+        
+        # pick infector
+        if (sum(weights) > 0) {
+          infector <- sample(sources, 1, prob = weights)
+        } else {
+          infector <- 0 # infection is imported
+        }
+        
         new_infections <- c(new_infections, j)
+        if (infector == 0) {
+          trial_pop$infector[j] <- 0 # imported infection
+        } else {
+          trial_pop$infector[j] <- trial_pop$ID[infector]
+        }
       }
     }
     
@@ -247,7 +288,37 @@ get_summary <- function(infected_pop){
   # number of cases at the beginning ?
   head <- head(incidence_df, 10)
   
-  return(list(plot, head))
+  # R_t? 
+  offspring <- table(na.omit(infected_pop$trial_pop$infector))
+  Rt_dt <- infected_pop$trial_pop %>% 
+    filter(!is.na(infector)) %>% 
+    group_by(time = tau) %>% 
+    summarize (R_t = round(mean(table(infector)), 2))
+  
+  # distribution of secondary cases
+  offspring_count <- as.numeric(offspring)
+  
+  hist_off <- hist(offspring_count)
+  mean_off <- mean(offspring_count)
+  var_off <- var(offspring_count)
+  
+  # fraction of infections from each source
+  infec_frac <- infected_pop$lambda_df %>% 
+    mutate(total = block + cluster + city) %>% 
+    summarize(block_frac = round(mean(block / total, na.rm = TRUE), 2),
+              cluster_frac = round(mean(cluster / total, na.rm = TRUE), 2),
+              city_frac = round(mean(city / total, na.rm = TRUE), 2))
+  
+  # attack rate?
+  attack_rate <- mean(infected_pop$trial_pop$infected)
+  
+  return(list("Epidemic Curve" = plot, "First 10 Infections" = head, 
+              "Fraction of Infections from Each Source" = infec_frac,
+              "Rt over time" = Rt_dt, 
+              "Histogram of Offspring Distribution" = hist_off, 
+              "Mean of Offspring Distribution" = mean_off, 
+              "Variance of Offspring Distribution" = var_off, 
+              "Attack Rate" = attack_rate))
 }
 ```
 
@@ -258,43 +329,181 @@ get_summary <- function(infected_pop){
 
 ## Parameter Testing
 ### Set Up
+
+```{r}
+run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha, 
+                     beta, gamma, r) {
+  
+  sim_list <- list()
+  offspring_index <- c()
+  rr_peak <- c()
+  time_diff_at_peaks <- c()
+  rr_peak_same_time <- c()
+  
+  real_df <- data.frame(
+    time = 1:nrow(city_cases_by_week),
+    case_rate = city_cases_by_week$cases_per_week / yuc_pop$POBTOT[1])
+  
+  for (s in 1:num_sims) {
+    infected_pop <- infect_pop(trial_pop, gen_prob, 1, alpha = alpha,
+                               beta = beta, gamma = gamma, r = r)
+    
+    # epidemic curve
+    ## average incidence across simulations
+    incidence <- infected_pop$trial_pop %>% 
+      filter(is.finite(tau)) %>% 
+      count(tau, name = "cases") %>% 
+      complete(tau = 1:trial_end, fill = list(cases = 0)) %>%
+      rename(time = tau) %>% 
+      mutate(case_rate = cases / (n_clusters*n_per_cluster),
+             sim = s)
+    
+    sim_list[[s]] <- incidence
+    
+    # count offspring
+    index_ids <- infected_pop$trial_pop$ID[infected_pop$trial_pop$index_case == 1]
+    count_offspring <- sapply(index_ids, function(id) {
+      sum(infected_pop$trial_pop$infector == id, na.rm = TRUE)
+    })
+    offspring_index[s] <- mean(count_offspring)
+    
+    # find peak incidence in simulation
+    study_peak <- max(incidence$case_rate)
+    real_peak <- max(real_df$case_rate)
+    
+    rr_peak[s] <- study_peak / real_peak # difference in magnitude
+    time_diff_at_peaks[s] <- incidence$time[which.max(incidence$case_rate)] - 
+      real_df$time[which.max(real_df$case_rate)]
+    
+    peak_time <- incidence$time[which.max(incidence$case_rate)]
+    real_peak_same_time <- real_df$case_rate[real_df$time == peak_time]
+    rr_peak_same_time[s] <- study_peak / real_peak_same_time
+  }
+  
+  # epidemic curve
+  all_sims <- bind_rows(sim_list)
+  epi_curve_summ <- all_sims %>% 
+    group_by(time) %>% 
+    summarize(mean_rate = mean(case_rate),
+              lower = quantile(case_rate, 0.025),
+              upper = quantile(case_rate, 0.975))
+  epi_curve <- ggplot() +
+    geom_ribbon(data = epi_curve_summ,
+                aes(x = time, ymin = lower, ymax = upper),
+                fill = "blue", alpha = 0.2) +
+    geom_line(data = epi_curve_summ,
+              aes(time, mean_rate),
+              color = "blue") +
+    geom_line(data = real_df,
+              aes(time, case_rate),
+              color = "red") +
+    labs(title = paste0("Average Case Rate over ", num_sims, " Simulations (Blue) vs. Mérida Incidence Rate")) +
+    theme_classic()
+  
+  # R_0
+  avg_offspring <- round(mean(offspring_index), 2)
+  var_offspring <- round(var(offspring_index), 2)
+  hist_offspring <- hist(offspring_index)
+  
+  # rate ratio between study population and merida
+  avg_rr_peak <- mean(rr_peak, na.rm = TRUE)
+  var_rr_peak <- var(rr_peak, na.rm = TRUE)
+  avg_time_diff <- mean(time_diff_at_peaks, na.rm = TRUE)
+  
+  ## also want to include average RR at peak simulated time
+  avg_rr_peak_same_time <- mean(rr_peak_same_time, na.rm = TRUE)
+  var_rr_peak_same_time <- var(rr_peak_same_time, na.rm = TRUE)
+  
+  return(list(epi_curve, hist_offspring,"Average R_0" = avg_offspring, 
+         "Variance of R_0" = var_offspring, "Num Simulations" = num_sims,
+         "Average RR at Peak Incidence" = avg_rr_peak,
+         "Variance of RR at Peak Incidence" = var_rr_peak,
+         "Average Difference in Weeks Between Simulated Study Peak and City Peak" 
+         = avg_time_diff,
+         "Average RR at Peak Simulated Incidence" = avg_rr_peak_same_time,
+         "Variance of RR at Peak Simulated Incidence" = var_rr_peak_same_time))
+}
+```
+
 Trial Population:
 ```{r}
 min_age <- 1 # youngest age
 max_age <- 82 # oldest age
 
-# Population size
-n_clusters <- 10; n_per_cluster <- 500; n_per_block <- 50
-
-trial_pop <- sim_pop(n_clusters, n_per_cluster, n_per_block)
-```
-
-Model Parameters:
-```{r}
-# parameters
-alpha <- -log(45/49); beta <- 0; gamma <- 0; r <- 1
-Gmu <- 2; Gs2 <- 1; max_gen_time <- 90 # 17 days?; 2 days?
-
 trial_start <- 1 # first week of the year
 trial_end <- nrow(city_cases_by_week) # 52 is the last week of the year but we don't have city incidence data for that??? so 50
 
+# parameters
+Gmu <- 2; Gs2 <- 1; max_gen_time <- 90 # 17 days?; 2 days?
 # probability that the generation time = [index]
 gen_prob <- gen_time(Gmu, Gs2, max_gen_time)
+
+# Population size
+n_clusters <- 10; n_per_cluster <- 500; n_per_block <- 50
+trial_pop <- sim_pop(n_clusters, n_per_cluster, n_per_block)
 ```
 
-Get infected population:
+### alpha
 ```{r}
-# alpha <- -log(45/49), beta <- 0, gamma <- 0, r <- 1;
-# n_clusters <- 10, n_per_cluster <- 500, n_per_block <- 50
-infected_pop <- infect_pop(trial_pop, gen_prob, 1, alpha = alpha, beta = beta,
-                           gamma = gamma, r = r)
+Sys.time()
+alpha <- -log(46/49); beta <- 0; gamma <- 0; r <- 1
+run_sims(50, trial_pop, gen_prob, 1, alpha, beta, gamma, r)
+Sys.time()
 ```
 
+### beta
+```{r}
+Sys.time()
+alpha <- 0; beta <- -log(897/900); gamma <- 0; r <- 1
+run_sims(50, trial_pop, gen_prob, 1, alpha, beta, gamma, r)
+Sys.time()
+```
 
+### gamma
+```{r}
+Sys.time()
+alpha <- 0; beta <- 0; gamma <- 0.000005; r <- 1
+run_sims(50, trial_pop, gen_prob, 1, alpha, beta, gamma, r)
+Sys.time()
+```
 
+```{r}
+Sys.time()
+alpha <- 0; beta <- 0; gamma <- 0.00001; r <- 1
+run_sims(50, trial_pop, gen_prob, 1, alpha, beta, gamma, r)
+Sys.time()
+```
 
+added RR at peak simulated incidence
+```{r}
+Sys.time()
+alpha <- 0; beta <- 0; gamma <- 0.00001; r <- 1
+run_sims(5, trial_pop, gen_prob, 1, alpha, beta, gamma, r)
+Sys.time()
+```
 
+changed I_m from raw case counts to incidence in the infecting population function
+```{r}
+Sys.time()
+alpha <- 0; beta <- 0; gamma <- 0.00001; r <- 1
+run_sims(5, trial_pop, gen_prob, 1, alpha, beta, gamma, r)
+Sys.time()
+```
 
+```{r}
+Sys.time()
+alpha <- 0; beta <- 0; gamma <- 0.01; r <- 1
+run_sims(5, trial_pop, gen_prob, 1, alpha, beta, gamma, r)
+Sys.time()
+```
+
+### gamma
+```{r}
+Sys.time()
+alpha <- 0; beta <- 0; gamma <- 1; r <- 1
+run_sims(5, trial_pop, gen_prob, 1, alpha, beta, gamma, r)
+Sys.time()
+```
 
 
 
