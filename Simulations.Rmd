@@ -392,15 +392,28 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
     })
     offspring_index[s] <- mean(count_offspring)
     
-    control_ids <- infected_pop$trial_pop %>% filter(TIRS == 0)
-    control_offspring <- table(na.omit(control_ids$infector))
-    offspring_count_controls <- as.numeric(control_offspring)
-    offspring_controls[s] <- mean(offspring_count_controls)
+    control_people <- infected_pop$trial_pop %>%
+      filter(TIRS == 0, infected == 1)
+    if (nrow(control_people) > 0) {
+      offspring_count_controls <- vapply(
+        control_people$ID, function(id) {
+          sum(infected_pop$trial_pop$infector == id, na.rm = TRUE)
+        },numeric(1))
+      offspring_controls[s] <- mean(offspring_count_controls)
+    } else {
+      offspring_controls[s] <- 0
+    }
     
-    tirs_ids <- infected_pop$trial_pop %>% filter(TIRS == 1)
-    tirs_offspring <- table(na.omit(tirs_ids$infector))
-    offspring_count_tirs <- as.numeric(tirs_offspring)
-    offspring_tirs[s] <- mean(offspring_count_tirs)
+    tirs_people <- infected_pop$trial_pop %>%
+      filter(TIRS == 1, infected == 1)
+    if (nrow(tirs_people) > 0) {
+      offspring_count_tirs<- vapply(tirs_people$ID, function(id) {
+          sum(infected_pop$trial_pop$infector == id, na.rm = TRUE)
+        }, numeric(1))
+      offspring_controls[s] <- mean(offspring_count_tirs)
+    } else {
+      offspring_controls[s] <- 0
+    }
     
     # find peak incidence in simulation
     study_peak <- max(incidence$case_rate)
@@ -545,14 +558,48 @@ Sys.time()
 ### r
 ```{r}
 Sys.time()
-alpha <- 0; beta <- 0; gamma <- 1; r <- 0.5
+alpha <- -log(46/49); beta <- 0; gamma <- 0; r <- 0.5
 run_sims(5, trial_pop, gen_prob, 1, alpha, beta, gamma, r)
 Sys.time()
 ```
 
+Will the case rates differ/will the difference appear much more distinct if i up the number of simulations?
+```{r}
+Sys.time()
+alpha <- -log(46/49); beta <- 0; gamma <- 0; r <- 0.5
+run_sims(30, trial_pop, gen_prob, 1, alpha, beta, gamma, r)
+Sys.time()
+```
 
 
 ## Grid Search
+
+parameter grid search
+```{r}
+alpha_vec <- c()
+beta_vec <- c()
+gamma_vec <- c()
+
+for (a in alpha_vec) {
+  for (b in beta_vec) {
+    for (g in gamma_vec) {
+      run_sims(30, trial_pop, gen_pop, 1, a, b, g, r = 0.5)
+    }
+  }
+}
+```
+
+
+output function
+```{r}
+# time series of cases
+
+# proportion of cases (vs. entire population)
+
+# demographics for cases
+
+# Poisson regression for efficacy estimates
+```
 
 
 
