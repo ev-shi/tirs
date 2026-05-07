@@ -2,7 +2,8 @@
 title: "Simulations"
 author: "Evelyn Shi"
 date: "`r Sys.Date()`"
-output: html_document
+output:
+  pdf_document: default
 ---
 
 ```{r}
@@ -332,17 +333,17 @@ get_summary <- function(infected_pop){
 
 ```{r}
 run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha, 
-                     beta, gamma, r) {
+                     beta, gamma, r, make_plots = TRUE) {
   
   sim_list <- list()
   offspring_index <- c()
   rr_peak <- c()
   time_diff_at_peaks <- c()
-  rr_peak_same_time <- c()
   control_list <- list()
   tirs_list <- list()
-  offspring_controls <- c()
-  offspring_tirs <- c()
+  prop_infected <- c()
+  control_infected <- c()
+  tirs_infected <- c()
   
   real_df <- data.frame(
     time = 1:nrow(city_cases_by_week),
@@ -371,8 +372,7 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
       count(tau, name = "cases") %>% 
       complete(tau = 1:trial_end, fill = list(cases = 0)) %>%
       rename(time = tau) %>% 
-      mutate(case_rate = cases / (n_clusters*n_per_cluster),
-             sim = s)
+      mutate(sim = s)
     control_list[[s]] <- control
     
     tirs <- infected_pop$trial_pop %>% 
@@ -381,8 +381,7 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
       count(tau, name = "cases") %>% 
       complete(tau = 1:trial_end, fill = list(cases = 0)) %>%
       rename(time = tau) %>% 
-      mutate(case_rate = cases / (n_clusters*n_per_cluster),
-             sim = s)
+      mutate(sim = s)
     tirs_list[[s]] <- tirs
     
     # count offspring
@@ -391,29 +390,6 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
       sum(infected_pop$trial_pop$infector == id, na.rm = TRUE)
     })
     offspring_index[s] <- mean(count_offspring)
-    
-    control_people <- infected_pop$trial_pop %>%
-      filter(TIRS == 0, infected == 1)
-    if (nrow(control_people) > 0) {
-      offspring_count_controls <- vapply(
-        control_people$ID, function(id) {
-          sum(infected_pop$trial_pop$infector == id, na.rm = TRUE)
-        },numeric(1))
-      offspring_controls[s] <- mean(offspring_count_controls)
-    } else {
-      offspring_controls[s] <- 0
-    }
-    
-    tirs_people <- infected_pop$trial_pop %>%
-      filter(TIRS == 1, infected == 1)
-    if (nrow(tirs_people) > 0) {
-      offspring_count_tirs<- vapply(tirs_people$ID, function(id) {
-          sum(infected_pop$trial_pop$infector == id, na.rm = TRUE)
-        }, numeric(1))
-      offspring_controls[s] <- mean(offspring_count_tirs)
-    } else {
-      offspring_controls[s] <- 0
-    }
     
     # find peak incidence in simulation
     study_peak <- max(incidence$case_rate)
@@ -426,11 +402,19 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
     peak_time <- incidence$time[which.max(incidence$case_rate)]
     real_peak_same_time <- real_df$case_rate[real_df$time == peak_time]
     rr_peak_same_time[s] <- study_peak / real_peak_same_time
+    
+    # proportion of population infected at end of season
+    prop_infected[s] <- sum(incidence$cases) / (n_clusters*n_per_cluster)
+    
+    # num infected by trial arm
+    control_infected[s] <- sum(control$cases)
+    tirs_infected[s] <- sum(tirs$cases)
   }
   
   # epidemic curve
-  all_sims <- bind_rows(sim_list)
-  epi_curve_summ <- all_sims %>% 
+  if (make_plots == TRUE) {
+    all_sims <- bind_rows(sim_list)
+    epi_curve_summ <- all_sims %>% 
     group_by(time) %>% 
     summarize(mean_rate = mean(case_rate),
               lower = quantile(case_rate, 0.025),
@@ -445,71 +429,73 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
     geom_line(data = real_df,
               aes(time, case_rate),
               color = "red") +
-    labs(title = paste0("Average Case Rate over ", num_sims, " Simulations (Blue) vs. Mérida Incidence Rate")) +
+    labs(title = paste0("Average Case Rate over ", num_sims, 
+                        " Simulations (Blue) vs. Mérida Incidence Rate")) +
     theme_classic()
-  
   all_controls <- bind_rows(control_list)
   all_tirs <- bind_rows(tirs_list)
   epi_curve_controls <- all_controls %>% 
     group_by(time) %>% 
-    summarize(mean_rate = mean(case_rate),
-              lower = quantile(case_rate, 0.025),
-              upper = quantile(case_rate, 0.975))
+    summarize(avg_num_cases = round(mean(cases), 2),
+              lower = quantile(avg_num_cases, 0.025),
+              upper = quantile(avg_num_cases, 0.975))
   epi_curve_tirs <- all_tirs %>% 
     group_by(time) %>% 
-    summarize(mean_rate = mean(case_rate),
-              lower = quantile(case_rate, 0.025),
-              upper = quantile(case_rate, 0.975))
+    summarize(avg_num_cases = round(mean(cases), 2),
+              lower = quantile(avg_num_cases, 0.025),
+              upper = quantile(avg_num_cases, 0.975))
   epi_curve_arms <- ggplot() +
     geom_ribbon(data = epi_curve_controls,
                 aes(x = time, ymin = lower, ymax = upper),
                 fill = "lightgreen", alpha = 0.2) +
     geom_line(data = epi_curve_controls,
-              aes(time, mean_rate),
+              aes(time, avg_num_cases),
               color = "lightgreen") +
     geom_ribbon(data = epi_curve_tirs,
                 aes(x = time, ymin = lower, ymax = upper),
                 fill = "pink", alpha = 0.2) +
     geom_line(data = epi_curve_tirs,
-              aes(time, mean_rate),
+              aes(time, avg_num_cases),
               color = "pink") +
-    labs(title = paste0("Average Case Rate over ", num_sims, " Simulations for Control (blue) \n and Intervention (Red) Arms")) +
+    labs(title = paste0("Average Number of Cases over ", num_sims, " Simulations for Control (Green) \n and Intervention (Pink) Arms")) +
     theme_classic()
+  
+  hist_offspring <- hist(offspring_index)
+  } else {
+    epi_curve <- NULL
+    epi_curve_arms <- NULL
+    hist_offspring <- NULL
+  }
   
   # R_0
   avg_offspring <- round(mean(offspring_index), 2)
   var_offspring <- round(var(offspring_index), 2)
-  hist_offspring <- hist(offspring_index)
-  
-  ## for trial arms
-  avg_offspring_controls <- round(mean(offspring_controls), 2)
-  var_offspring_controls <- round(var(offspring_controls), 2)
-  hist_offspring_controls <- hist(offspring_controls)
-  avg_offspring_tirs <- round(mean(offspring_tirs), 2)
-  var_offspring_tirs <- round(var(offspring_tirs), 2)
-  hist_offspring_tirs <- hist(offspring_tirs)
   
   # rate ratio between study population and merida
   avg_rr_peak <- mean(rr_peak, na.rm = TRUE)
   var_rr_peak <- var(rr_peak, na.rm = TRUE)
   avg_time_diff <- mean(time_diff_at_peaks, na.rm = TRUE)
   
-  ## also want to include average RR at peak simulated time
-  avg_rr_peak_same_time <- mean(rr_peak_same_time, na.rm = TRUE)
-  var_rr_peak_same_time <- var(rr_peak_same_time, na.rm = TRUE)
+  # proportion of population infected
+  avg_prop_infected <- mean(prop_infected, na.rm = TRUE)
   
-  return(list(epi_curve, hist_offspring,"Average R_0" = avg_offspring, 
-         "Variance of R_0" = var_offspring, "Num Simulations" = num_sims,
-         "Average RR at Peak Incidence" = avg_rr_peak,
-         "Variance of RR at Peak Incidence" = var_rr_peak,
-         "Average Difference in Weeks Between Simulated Study Peak and City Peak" 
-         = avg_time_diff,
-         "Average RR at Peak Simulated Incidence" = avg_rr_peak_same_time,
-         "Variance of RR at Peak Simulated Incidence" = var_rr_peak_same_time,
-         epi_curve_arms, "Controls Average R_t" = 
-           avg_offspring_controls, "Variance of Controls R_t" = 
-           var_offspring_controls, "TIRS Average R_t" =
-           avg_offspring_tirs, "Variance of TIRS R_t" = var_offspring_tirs))
+  # avg infected by trial arm
+  avg_control_infected <- mean(control_infected, na.rm = TRUE)
+  avg_tirs_infected <- mean(tirs_infected, na.rm = TRUE)
+  
+  return(list(epi_curve = epi_curve, hist_offspring = hist_offspring,
+              "Average R_0" = avg_offspring, "Variance of R_0" = var_offspring,
+              "Num Simulations" = num_sims, 
+              "Average RR at Peak Incidence" = avg_rr_peak, 
+              "Variance of RR at Peak Incidence" = var_rr_peak,
+              "Average Difference in Weeks Between Simulated Study Peak and City Peak" 
+              = avg_time_diff, epi_curve_arms = epi_curve_arms,
+              "Average Proportion of People Infected by End of ABD Season" =
+                avg_prop_infected,
+              "Average No. Individuals Infected in Control Arm" =
+                avg_control_infected,
+              "Average No. Individuals Infected in TIRS Arm" = 
+                avg_tirs_infected))
 }
 ```
 
@@ -532,73 +518,139 @@ trial_pop <- sim_pop(n_clusters, n_per_cluster, n_per_block)
 ```
 
 ### alpha
-```{r}
+```{r, eval = FALSE}
 Sys.time()
 alpha <- -log(46/49); beta <- 0; gamma <- 0; r <- 1
 run_sims(50, trial_pop, gen_prob, 1, alpha, beta, gamma, r)
 Sys.time()
 ```
+```{r, echo = FALSE, out.width='80%'}
+alpha_results <- list(`Average R_0` = 3,
+                      `Variance of R_0` = 2.73,
+                      `Num Simulations` = 50,
+                      `Average RR at Peak Incidence` = 0.3958843,
+                      `Variance of RR at Peak Incidence` = 0.02140549,
+                      `Average Difference in Weeks Between Simulated Study Peak and City Peak` = -27.8)
+alpha_results
+knitr::include_graphics("alpha_res_offspring.png")
+```
+```{r, echo = FALSE, out.width='80%'}
+knitr::include_graphics("alpha_res_epi_curve.png")
+```
 
 ### beta
-```{r}
+```{r, eval=FALSE}
 Sys.time()
 alpha <- 0; beta <- -log(897/900); gamma <- 0; r <- 1
 run_sims(50, trial_pop, gen_prob, 1, alpha, beta, gamma, r)
 Sys.time()
 ```
 
+```{r, echo = FALSE, out.width='80%'}
+beta_results <- list(`Average R_0` = 1.56,
+                      `Variance of R_0` = 1.11,
+                      `Num Simulations` = 50,
+                      `Average RR at Peak Incidence` = 0.5938264,
+                      `Variance of RR at Peak Incidence` = 0.2034235,
+                      `Average Difference in Weeks Between Simulated Study Peak and City Peak` = -18)
+beta_results
+knitr::include_graphics("beta_res_offspring.png")
+```
+```{r, echo = FALSE, out.width='80%'}
+knitr::include_graphics("beta_res_epi_curve.png")
+```
+
 ### gamma
-```{r}
+```{r, eval=FALSE}
 Sys.time()
 alpha <- 0; beta <- 0; gamma <- 1; r <- 1
 run_sims(5, trial_pop, gen_prob, 1, alpha, beta, gamma, r)
 Sys.time()
 ```
+```{r, echo = FALSE, out.width='80%'}
+gamma_results <- list(`Average R_0` = 0,
+                      `Variance of R_0` = 0,
+                      `Num Simulations` = 5,
+                      `Average RR at Peak Incidence` = 0.9655714,
+                      `Variance of RR at Peak Incidence` = 0.003496231,
+                      `Average Difference in Weeks Between Simulated Study Peak and City Peak` = 3.4)
+gamma_results
+knitr::include_graphics("gamma_res_offspring.png")
+```
+
+```{r, echo = FALSE, out.width='80%'}
+knitr::include_graphics("gamma_res_epi_curve.png")
+```
 
 ### r
-```{r}
+```{r, eval = FALSE}
 Sys.time()
 alpha <- -log(46/49); beta <- 0; gamma <- 0; r <- 0.5
 run_sims(5, trial_pop, gen_prob, 1, alpha, beta, gamma, r)
 Sys.time()
 ```
-
-Will the case rates differ/will the difference appear much more distinct if i up the number of simulations?
-```{r}
-Sys.time()
-alpha <- -log(46/49); beta <- 0; gamma <- 0; r <- 0.5
-run_sims(30, trial_pop, gen_prob, 1, alpha, beta, gamma, r)
-Sys.time()
+```{r, echo = FALSE, out.width='80%'}
+r_results <- list(`Average R_0` = 2.4,
+                      `Variance of R_0` = 2.8,
+                      `Num Simulations` = 5,
+                      `Average RR at Peak Incidence` = 0.3282943,
+                      `Variance of RR at Peak Incidence` = 0.0272706,
+                      `Average Difference in Weeks Between Simulated Study Peak and City Peak` = -27.8)
+r_results
+knitr::include_graphics("r_res_offspring.png")
 ```
 
+```{r, echo = FALSE, out.width='80%'}
+knitr::include_graphics("r_res_epi_curve.png")
+```
+
+```{r, echo = FALSE, out.width='80%'}
+knitr::include_graphics("r_res_trial_arms.png")
+```
 
 ## Grid Search
 
-parameter grid search
-```{r}
-alpha_vec <- c()
-beta_vec <- c()
-gamma_vec <- c()
+parameter grid search (just testing to see if this will run for now)
+```{r, eval=FALSE}
+param_grid <- expand.grid(
+  alpha = c(0, -log(46/49)),
+  beta  = c(0, -log(897/900)),
+  gamma = c(0, 1e-6)
+)
 
-for (a in alpha_vec) {
-  for (b in beta_vec) {
-    for (g in gamma_vec) {
-      run_sims(30, trial_pop, gen_pop, 1, a, b, g, r = 0.5)
-    }
-  }
+grid_results <- vector("list", nrow(param_grid))
+
+for (p in 1:nrow(param_grid)) {
+  a <- param_grid$alpha[p]
+  b <- param_grid$beta[p]
+  g <- param_grid$gamma[p]
+  
+  sim_out <- run_sims(1, trial_pop, gen_prob, 1, a, b, g, r = 0.5, 
+                      make_plots = FALSE)
+  
+  grid_results[[p]] <- data.frame(alpha = a,
+                             beta = b,
+                             gamma = g,
+                             avg_R0 = sim_out$'Average R_0',
+                             avg_RR_peak = sim_out$'Average RR at Peak Incidence')
 }
+
+grid_results_df <- bind_rows(grid_results)
+```
+
+```{r, echo = FALSE}
+grid_results_df <- readRDS("grid_results_df.rds")
+grid_results_df
 ```
 
 
 output function
-```{r}
-# time series of cases
-
+```{r, echo=FALSE}
 # proportion of cases (vs. entire population)
 
-# demographics for cases
-
 # Poisson regression for efficacy estimates
+
+# Average number of cases in both arms?
 ```
 
 
