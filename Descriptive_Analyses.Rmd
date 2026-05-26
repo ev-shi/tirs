@@ -99,7 +99,7 @@ clusters_sf <- st_transform(clusters_sf, st_crs(merida_block_sf))
 ```{r}
 seven <- cases_tirs_info %>% 
   head(7) %>% 
-  select(ID, MZTIRS, CLUSTER, Week_onset, Week_onset)
+  dplyr::select(ID, MZTIRS, CLUSTER, Week_onset, Week_onset)
 v <- c(rep(-1, 9), rep(-1, 3), 1)
 neg_vax <- as.data.frame(matrix(v, nrow = 7, ncol = length(v), byrow = TRUE))
 seven <- cbind(seven, neg_vax)

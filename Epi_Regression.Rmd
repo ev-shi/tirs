@@ -88,15 +88,86 @@ ento_clbl <- ento %>%
 ento_clbl <- ento_clbl[-1,]
 ```
 
+# From Amy
+## put data together
+```{r}
+enroll <- enroll %>% 
+  mutate(cl_nr = str_sub(PPID, 1, 2),
+         bl_nr = str_sub(PPID, 3, 4),
+         record_id = str_sub(PPID, 1, 6))
+trial_area_sf <- trial_area_sf %>% 
+  mutate(cl_nr = str_sub(clbl, 1, 2),
+         bl_nr = str_sub(clbl, 3, 4),
+         record_id = str_sub(clbl, 1, 4))
+ento <- ento %>% 
+  mutate(cl_nr = id_cluster,
+         bl_nr = id_block,
+         record_id = paste0(id_cluster, id_block))
+```
+
+## record ID/block changes 
+oh my god do i need to do this for all of them?
+```{r}
+changed_id <- function(data){
+  # Record ID/block changes
+  # 285011 -> 282811
+  # 355013 -> 352613
+  # 376213 -> 376813
+  # 644905 -> 642205
+  # 644908 -> 642208
+  # 646633 -> 643233
+  
+  data$bl_nr[which(data$cl_nr==28&data$bl_nr==50)] <- 28
+  data$bl_nr[which(data$cl_nr==35&data$bl_nr==50)] <- 26
+  data$bl_nr[which(data$cl_nr==37&data$bl_nr==62)] <- 68
+  data$bl_nr[which(data$cl_nr==64&data$bl_nr==49)] <- 22
+  data$bl_nr[which(data$cl_nr==64&data$bl_nr==66)] <- 32
+  
+  # Remove clusters 13, 20, 39, 44
+  
+  data <- data %>%
+    filter(!substr(record_id,1,2)%in%c("13", "20", "39", "44"))
+}
+
+```
+
+```{r}
+enroll <- changed_id(enroll)
+trial_area_sf <- changed_id(trial_area_sf)
+ento <- changed_id(ento)
+```
+
+
+
+```{r}
+enroll_clbl <- enroll %>% 
+  mutate(clbl = str_sub(PPID, 1, 4)) %>% 
+  group_by(clbl) %>% 
+  summarize(num_participants = n())
+
+ento_clbl <- ento %>% 
+  mutate(clbl = paste0(id_cluster, id_block)) %>% 
+  group_by(clbl, id_cluster, id_block) %>% 
+  summarize(total_mosq_count = sum(`Sum of ae_fem`))
+  
+```
+
+
+
+
+
+
 # Which Missing?
 Blocks with entomology data but no participants
 ```{r}
 ento_clbl %>% filter(!(clbl %in% cohort_clbl$clbl))
+ento_clbl %>% filter(!(clbl %in% data_clbl$clbl))
 ```
 
 Blocks with participant data but not mosquito
 ```{r}
 cohort_clbl %>% filter(!(clbl %in% ento_clbl$clbl))
+data_clbl %>% filter(!(clbl %in% ento_clbl$clbl))
 ```
 
 Blocks not within the trial area shapefile, but are in the entomology data
@@ -107,6 +178,7 @@ ento_clbl %>% filter(!(clbl %in% trial_area_sf$clbl))
 Blocks not within the trial area shapefile, but are in the cohort enrollment data
 ```{r}
 cohort_clbl %>% filter(!(clbl %in% trial_area_sf$clbl))
+data_clbl %>% filter(!(clbl %in% trial_area_sf$clbl))
 ```
 
 # Other
