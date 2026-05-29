@@ -463,47 +463,345 @@ r_test_start_time
 
 ## Grid Search
 
-parameter grid search (just testing to see if this will run for now)
-```{r, eval=FALSE}
+### Run Simulations Function
+```{r}
+run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha, 
+                     beta, gamma, r) {
+  
+  sim_list <- list()
+  offspring_index <- c()
+  rr_peak <- c()
+  time_diff_at_peaks <- c()
+  control_list <- list()
+  tirs_list <- list()
+  prop_infected <- c()
+  control_infected <- c()
+  tirs_infected <- c()
+  pois_efficacy <- c()
+  
+  real_df <- data.frame(
+    time = 1:trial_end,
+    case_rate = city_cases_by_week$cases_per_week / yuc_pop$POBTOT[1])
+  
+  for (s in 1:num_sims) {
+    infected_pop <- infect_pop(trial_pop, gen_prob, 1, alpha = alpha,
+                               beta = beta, gamma = gamma, r = r)
+    
+    # epidemic curve
+    ## average incidence across simulations
+    incidence <- infected_pop %>% 
+      filter(is.finite(tau)) %>% 
+      count(tau, name = "cases") %>% 
+      complete(tau = trial_start:trial_end, fill = list(cases = 0)) %>%
+      rename(time = tau) %>% 
+      mutate(case_rate = cases / (n_clusters*n_per_cluster),
+             sim = s)
+    
+    sim_list[[s]] <- incidence
+    
+    ## by trial arm
+    control <- infected_pop %>% 
+      filter(is.finite(tau)) %>% 
+      filter(TIRS == 0) %>% 
+      count(tau, name = "cases") %>% 
+      complete(tau = trial_start:trial_end, fill = list(cases = 0)) %>%
+      rename(time = tau) %>% 
+      mutate(sim = s)
+    control_list[[s]] <- control
+    
+    tirs <- infected_pop %>% 
+      filter(is.finite(tau)) %>% 
+      filter(TIRS == 1) %>% 
+      count(tau, name = "cases") %>% 
+      complete(tau = trial_start:trial_end, fill = list(cases = 0)) %>%
+      rename(time = tau) %>% 
+      mutate(sim = s)
+    tirs_list[[s]] <- tirs
+    
+    # count offspring
+    index_ids <- infected_pop$ID[infected_pop$index_case == 1]
+    count_offspring <- sapply(index_ids, function(id) {
+      sum(infected_pop$infector == id, na.rm = TRUE)
+    })
+    offspring_index[s] <- mean(count_offspring)
+    
+    # find peak incidence in simulation
+    study_peak <- max(incidence$case_rate)
+    real_peak <- max(real_df$case_rate)
+    
+    rr_peak[s] <- study_peak / real_peak # difference in magnitude
+    time_diff_at_peaks[s] <- incidence$time[which.max(incidence$case_rate)] - 
+      real_df$time[which.max(real_df$case_rate)]
+    
+    # proportion of population infected at end of season
+    prop_infected[s] <- sum(incidence$cases) / (n_clusters*n_per_cluster)
+    
+    # num infected by trial arm
+    control_infected[s] <- sum(control$cases)
+    tirs_infected[s] <- sum(tirs$cases)
+    
+    # Poisson regression
+    cases_by_cluster <- infected_pop %>% 
+      group_by(Cluster, TIRS) %>% 
+      summarize(num_cases = sum(infected), .groups = "drop")
+    
+    pois_fit <- glm(num_cases ~ TIRS, family = poisson(link = "log"), 
+                data = cases_by_cluster)
+    pois_efficacy[s] <- 1 - exp(coef(pois_fit)["TIRS"])
+  }
+  
+  # R_0
+  avg_offspring <- mean(offspring_index)
+  var_offspring <- var(offspring_index)
+  
+  # rate ratio between study population and merida
+  avg_rr_peak <- mean(rr_peak, na.rm = TRUE)
+  var_rr_peak <- var(rr_peak, na.rm = TRUE)
+  avg_time_diff <- mean(time_diff_at_peaks, na.rm = TRUE)
+  
+  # proportion of population infected
+  avg_prop_infected <- mean(prop_infected, na.rm = TRUE)
+  
+  # avg infected by trial arm
+  avg_control_infected <- mean(control_infected, na.rm = TRUE)
+  avg_tirs_infected <- mean(tirs_infected, na.rm = TRUE)
+  
+  # avg efficacy estimate from Poisson regression
+  avg_pois_estimate <- mean(pois_efficacy, na.rm = TRUE)
+  
+  return(list(avg_offspring = avg_offspring, var_offspring = var_offspring,
+              avg_rr_peak = avg_rr_peak, var_rr_peak = var_rr_peak,
+              avg_time_diff = avg_time_diff, 
+              avg_prop_infected = avg_prop_infected, 
+              avg_control_infected = avg_control_infected,
+              avg_tirs_infected = avg_tirs_infected,
+              avg_pois_estimate = avg_pois_estimate))
+}
+```
+
+### Grid Search
+#### Num. Runs
+Trial Population
+```{r}
+min_age <- 1 # youngest age
+max_age <- 82 # oldest age
+
+trial_start <- 26
+trial_end <- 50 # 52 is the last week of the year but we don't have city incidence data for that??? so 50
+
+# parameters
+Gmu <- 2; Gs2 <- 1; max_gen_time <- 90 # 17 days?; 2 days?
+# probability that the generation time = [index]
+gen_prob <- gen_time(Gmu, Gs2, max_gen_time)
+
+# Population size
+n_clusters <- 10; n_per_cluster <- 500; n_per_block <- 50
+trial_pop <- sim_pop(n_clusters, n_per_cluster, n_per_block)
+```
+
+Parameters to test:
+```{r}
 param_grid <- expand.grid(
-  alpha = c(-log(75/98), -log(46/49), -log(89/98)), # block R0 = 1.5, 3, 4.5? 
-  beta  = c(-log(897/900), -log(447/450), -log(891/100)), # block R0 = 1.5, 3, 4.5?
-  gamma = c(1e-3, 1e-5, 1e-7)
+  alpha = c(   # block R0 = 1.5, 3, 4.5? 
+    -log((1.5 + 1 - n_per_block) / (1 - n_per_block)),
+    -log((3 + 1 - n_per_block) / (1 - n_per_block)),
+    -log((4.5 + 1 - n_per_block) / (1 - n_per_block))
+  ), 
+  beta  = c(   # cluster R0 = 1.5, 3, 4.5?
+    -log((1.5 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster)),
+    -log((3 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster)),
+    -log((4.5 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster))
+  ), 
+  gamma = c(0.5, 1, 2) # case rate 1/2 of that of city, matches, x2
 )
 
 grid_results <- vector("list", nrow(param_grid))
+```
 
+5 runs each
+```{r, eval=FALSE}
 Sys.time()
 for (p in 1:nrow(param_grid)) {
   a <- param_grid$alpha[p]
   b <- param_grid$beta[p]
   g <- param_grid$gamma[p]
   
-  sim_out <- run_sims(3, trial_pop, gen_prob, 1, a, b, g, r = 0.5, 
-                      make_plots = FALSE)
+  sim_out <- run_sims(5, trial_pop, gen_prob, 1, a, b, g, r = 0.5)
   
   grid_results[[p]] <- data.frame(alpha = a,
                              beta = b,
                              gamma = g,
-                             avg_R0 = sim_out$'Average R_0',
-                             var_R0 = sim_out$"Variance of R_0",
-                             avg_RR_peak = sim_out$'Average RR at Peak Incidence',
-                             avg_time_diff = sim_out$"Average Difference in Weeks Between Simulated Study Peak and City Peak",
-                             avg_prop_cases = sim_out$"Average Proportion of People Infected by End of ABD Season",
-                             avg_cases_control = sim_out$"Average No. Cases in Control Arm",
-                             avg_cases_tirs = sim_out$"Average No. Cases in TIRS Arm",
-                             avg_estimate = sim_out$"Average TIRS Efficacy Estimate from Poisson Regression"
+                             avg_R0 = round(sim_out$avg_offspring, 2),
+                             var_R0 = round(sim_out$var_offspring, 2),
+                             avg_RR_peak = round(sim_out$avg_rr_peak, 2),
+                             avg_time_diff = round(sim_out$avg_time_diff, 2),
+                             avg_prop_cases = round(sim_out$avg_prop_infected, 2),
+                             avg_cases_control = round(sim_out$avg_control_infected, 2),
+                             avg_cases_tirs = round(sim_out$avg_tirs_infected, 2),
+                             avg_eff_estimate = round(sim_out$avg_pois_estimate, 2)
                              )
 }
 Sys.time()
 
-grid_results_df <- bind_rows(grid_results)
+grid_results_5ea <- bind_rows(grid_results)
+saveRDS(grid_results_5ea, file = "sim_results/param_grid_search/grid_results_5ea.rds")
 ```
 
+10 runs each
+```{r, eval=FALSE}
+Sys.time()
+for (p in 1:nrow(param_grid)) {
+  a <- param_grid$alpha[p]
+  b <- param_grid$beta[p]
+  g <- param_grid$gamma[p]
+  
+  sim_out <- run_sims(10, trial_pop, gen_prob, 1, a, b, g, r = 0.5)
+  
+  grid_results[[p]] <- data.frame(alpha = a,
+                             beta = b,
+                             gamma = g,
+                             avg_R0 = round(sim_out$avg_offspring, 2),
+                             var_R0 = round(sim_out$var_offspring, 2),
+                             avg_RR_peak = round(sim_out$avg_rr_peak, 2),
+                             avg_time_diff = round(sim_out$avg_time_diff, 2),
+                             avg_prop_cases = round(sim_out$avg_prop_infected, 2),
+                             avg_cases_control = round(sim_out$avg_control_infected, 2),
+                             avg_cases_tirs = round(sim_out$avg_tirs_infected, 2),
+                             avg_eff_estimate = round(sim_out$avg_pois_estimate, 2)
+                             )
+}
+Sys.time()
 
+grid_results_10ea <- bind_rows(grid_results)
+saveRDS(grid_results_10ea, file = "sim_results/param_grid_search/grid_results_10ea.rds")
+```
 
+25 runs each
+```{r, eval=FALSE}
+Sys.time()
+for (p in 1:nrow(param_grid)) {
+  a <- param_grid$alpha[p]
+  b <- param_grid$beta[p]
+  g <- param_grid$gamma[p]
+  
+  sim_out <- run_sims(25, trial_pop, gen_prob, 1, a, b, g, r = 0.5)
+  
+  grid_results[[p]] <- data.frame(alpha = a,
+                             beta = b,
+                             gamma = g,
+                             avg_R0 = round(sim_out$avg_offspring, 2),
+                             var_R0 = round(sim_out$var_offspring, 2),
+                             avg_RR_peak = round(sim_out$avg_rr_peak, 2),
+                             avg_time_diff = round(sim_out$avg_time_diff, 2),
+                             avg_prop_cases = round(sim_out$avg_prop_infected, 2),
+                             avg_cases_control = round(sim_out$avg_control_infected, 2),
+                             avg_cases_tirs = round(sim_out$avg_tirs_infected, 2),
+                             avg_eff_estimate = round(sim_out$avg_pois_estimate, 2)
+                             )
+}
+Sys.time()
 
+grid_results_25ea <- bind_rows(grid_results)
+saveRDS(grid_results_25ea, file = "sim_results/param_grid_search/grid_results_25ea.rds")
+```
 
+```{r}
+#grid_results_df <- readRDS("sim_results/param_grid_search/grid_results_df.rds")
+```
+
+### Visualize Results
+Label parameters to make visuals easier
+```{r}
+grid_results_25ea$alpha <- factor(
+  grid_results_25ea$alpha,
+  levels = c(   # block R0 = 1.5, 3, 4.5? 
+    -log((1.5 + 1 - n_per_block) / (1 - n_per_block)),
+    -log((3 + 1 - n_per_block) / (1 - n_per_block)),
+    -log((4.5 + 1 - n_per_block) / (1 - n_per_block))
+  ),
+  labels = c("block_R0_1.5", "block_R0_3", "block_R0_4.5")
+)
+
+grid_results_25ea$beta <- factor(
+  grid_results_25ea$beta,
+  levels = c(   # cluster R0 = 1.5, 3, 4.5?
+    -log((1.5 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster)),
+    -log((3 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster)),
+    -log((4.5 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster))
+  ),
+  labels = c("cluster_R0_1.5", "cluster_R0_3", "cluster_R0_4.5")
+)
+```
+
+#### R_0
+
+```{r}
+ggplot(grid_results_25ea,
+       aes(alpha, beta, fill = avg_R0)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Since the model I'm using won't be able to track secondary infections coming 
+from the same imported infection, The R_0 here is really only the R_0 within the 
+cluster/trial area. As such, these graphs should be about the same across gamma 
+values.
+
+#### RR peak
+
+```{r}
+ggplot(grid_results_25ea,
+       aes(alpha, beta, fill = avg_RR_peak)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Average RR_0 peak here is the ratio in case rate (no. cases / total
+population of the area) between the epidemic peak in the study area and the 
+peak for the entire city; i.e., case rate of study / case rate of city...
+
+What should I expect for this to look like over different gamma? This should
+= gamma, yes?
+
+study_peak <- max(incidence$case_rate)
+real_peak <- max(real_df$case_rate)
+
+rr_peak[s] <- study_peak / real_peak # difference in magnitude
+
+Well ok no it's = gamma when alpha and beta are 0....those are driving the 
+case rate up...so the difference in magnitude between study and city is already
+pretty high, even if there is a low number of imported cases, but this magnitude
+increases greatly as there's more transmission among the cluster.
+
+#### Proportion of Cases
+```{r}
+ggplot(grid_results_25ea,
+       aes(alpha, beta, fill = avg_prop_cases)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+This shows the proportion of the study population infected by the end of the 
+ABD season. The biggest change seems to be as the R_0 within the cluster 
+increases, though it also rises (at a lesser rate) as gamma increases. That is,
+imported cases seem to have a smaller effect on infection rate. ??
+
+#### Efficacy Estimate
+```{r}
+ggplot(grid_results_25ea,
+       aes(alpha, beta, fill = avg_eff_estimate)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+I set the parameter r (reduction in infection due to intervention) as 0.5. When
+R_0 within the cluster is low, the intervention appears to work quite well.
+When R_0 within the cluster in high, the effect of the intervention quickly 
+drops.
 
 
 
