@@ -706,7 +706,7 @@ saveRDS(grid_results_25ea, file = "sim_results/param_grid_search/grid_results_25
 ```
 
 ```{r}
-#grid_results_df <- readRDS("sim_results/param_grid_search/grid_results_df.rds")
+grid_results_25ea <- readRDS("sim_results/param_grid_search/grid_results_25ea.rds")
 ```
 
 ### Visualize Results
@@ -789,6 +789,18 @@ ABD season. The biggest change seems to be as the R_0 within the cluster
 increases, though it also rises (at a lesser rate) as gamma increases. That is,
 imported cases seem to have a smaller effect on infection rate. ??
 
+When comparing against the actual data --
+number cases in trial / total population of trial area: 0.005744335
+Which is a lot lower than anything i have here which makes sense considering my
+total population is much lower (500 per cluster vs ~2300 on avg per cluster; 
+and only 10 clusters here vs 50 clusters irl)
+ALSO i have the entire population as 100% susceptible which of course isn't true
+so of course more of the population here would get infected / a higher 
+proportion of the population would get infected
+
+so i should probably try running this on hipergator with a similar population 
+size first?
+
 #### Efficacy Estimate
 ```{r}
 ggplot(grid_results_25ea,
@@ -803,6 +815,13 @@ R_0 within the cluster is low, the intervention appears to work quite well.
 When R_0 within the cluster in high, the effect of the intervention quickly 
 drops.
 
+Efficacy in the actual data is 18.5% (5%, 30%) [no offset] which is closer to 
+the higher R_0 values for block and individual clusters (i.e., higher rates 
+of transmission overwhelm the effect of the treatment). 
+
+Note -- the paper found a community effect of 23.9, though this was looking at
+only the cases (both adult and children) that were within the trial area but
+were not participating in the trial. (different population)
 
 
 
