@@ -12,6 +12,7 @@ library(rio)
 library(tidyverse)
 library(lubridate)
 library(ggplot2)
+library(survival)
 ```
 
 # Data
@@ -103,8 +104,17 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
   trial_pop$infected <- 0
   trial_pop$tau <- NA
   trial_pop$infector <- NA
+  trial_pop$source <- NA
   
-  initial_ids <- sample(1:N, initially_infected)
+  # susceptibility
+  trial_pop$susceptible <- 1
+  adult_ids <- which(trial_pop$Age >= 18)
+  immune_adults <- sample(adult_ids, size = round(0.05 * length(adult_ids))) # 5% adults immune??
+  trial_pop$susceptible[immune_adults] <- 0
+  
+  # tracking infectors
+  susceptible_ids <- which(trial_pop$susceptible == 1)
+  initial_ids <- sample(susceptible_ids, initially_infected)
   trial_pop$infected[initial_ids] <- 1
   trial_pop$tau[initial_ids] <- trial_start
   trial_pop$index_case <- 0
@@ -116,6 +126,7 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
     
     for (j in 1:N){
       if (trial_pop$infected[j] == 1) { next }
+      if (trial_pop$susceptible[j] == 0) { next }
       
       lambda_jb <- 0
       lambda_jc <- 0
@@ -151,7 +162,7 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
               lambda_jc <- lambda_jc + r * beta * gen_prob[dt]
             } else {
               lambda_jc <- lambda_jc + beta * gen_prob[dt]
-              # cum. hazard from i infecting j * prob that gen time is dt
+              # hazard from i infecting j * prob that gen time is dt
             }
           }
         }
@@ -209,8 +220,14 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
         new_infections <- c(new_infections, j)
         if (infector == 0) {
           trial_pop$infector[j] <- 0 # imported infection
+          trial_pop$source[j] <- 0
         } else {
           trial_pop$infector[j] <- trial_pop$ID[infector]
+          if (infector %in% same_block){
+            trial_pop$source[j] <- 1
+          } else {
+            trial_pop$source[j] <- 2
+          }
         }
       }
     }
@@ -223,6 +240,16 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
   
   return(trial_pop = trial_pop)
 }
+```
+
+test
+```{r}
+infected_pop_test <- infect_pop(
+  trial_pop, gen_prob, initially_infected = 1, 
+  alpha = -log((1.5 + 1 - n_per_block) / (1 - n_per_block)), 
+  beta = -log((1.5 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster)), 
+  gamma = 2, 
+  r = 0.5)
 ```
 
 ## Parameter Testing
@@ -478,6 +505,12 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
   control_infected <- c()
   tirs_infected <- c()
   pois_efficacy <- c()
+  pois_popoff_eff <- c()
+  pois_ptoff_eff <- c()
+  cox_efficacy <- c()
+  source_community <- c()
+  source_block <- c()
+  source_cluster <- c()
   
   real_df <- data.frame(
     time = 1:trial_end,
@@ -540,7 +573,7 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
     control_infected[s] <- sum(control$cases)
     tirs_infected[s] <- sum(tirs$cases)
     
-    # Poisson regression
+    # Poisson regression (no offset)
     cases_by_cluster <- infected_pop %>% 
       group_by(Cluster, TIRS) %>% 
       summarize(num_cases = sum(infected), .groups = "drop")
@@ -548,6 +581,48 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
     pois_fit <- glm(num_cases ~ TIRS, family = poisson(link = "log"), 
                 data = cases_by_cluster)
     pois_efficacy[s] <- 1 - exp(coef(pois_fit)["TIRS"])
+    
+    # Poisson regression (offset by population)
+    cases_pop_by_cluster <- cbind(cases_by_cluster, 
+                                  n_per_cluster = rep(n_per_cluster, 
+                                                        nrow(cases_by_cluster)))
+    
+    pois_ofit_pop <- glm(num_cases ~ TIRS + offset(log(n_per_cluster)), 
+                         family = poisson(link = "log"), 
+                         data = cases_pop_by_cluster)
+    pois_popoff_eff[s] <- 1 - exp(coef(pois_ofit_pop)["TIRS"])
+    
+    # Poisson regression (offset by person-time?)
+    infected_pop$person_time <- ifelse(infected_pop$infected == 1, 
+                                       infected_pop$tau, trial_end)
+    cases_per_cluster_pt <- infected_pop %>% 
+      group_by(Cluster, TIRS) %>% 
+      summarize(num_cases = sum(infected),
+                person_time = sum(person_time),
+                .groups = "drop")
+    
+    pois_ofit_pt <- glm(num_cases ~ TIRS + offset(log(person_time)), 
+                        family = poisson(link = "log"), 
+                        data = cases_per_cluster_pt)
+    pois_ptoff_eff[s] <- 1 - exp(coef(pois_ofit_pt)["TIRS"])
+    
+    # Cox model (as done in paper)
+        # first remove index case
+    cox_dat <- infected_pop[infected_pop$index_case != 1,]
+        # itt.cox <- coxph(Surv(entry, exit, Pos_All) ~ arm + cluster(cluster),
+        #                   data = data)
+    cox_fit <- coxph(Surv(rep(26, nrow(cox_dat)), 
+                                  tau, infected) ~ TIRS + cluster(Cluster),
+                             data = cox_dat)
+    cox_efficacy[s] <- 1 - exp(coef(cox_fit))
+    
+    # infector source: num infected per source / total pop infected
+    source_community[s] <- sum(infected_pop$source == 0, na.rm = TRUE) / 
+      sum(infected_pop$infected)
+    source_block[s] <- sum(infected_pop$source == 1, na.rm = TRUE) / 
+      sum(infected_pop$infected)
+    source_cluster[s] <- sum(infected_pop$source == 2, na.rm = TRUE) / 
+      sum(infected_pop$infected)
   }
   
   # R_0
@@ -566,8 +641,16 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
   avg_control_infected <- mean(control_infected, na.rm = TRUE)
   avg_tirs_infected <- mean(tirs_infected, na.rm = TRUE)
   
-  # avg efficacy estimate from Poisson regression
+  # avg efficacy estimates
   avg_pois_estimate <- mean(pois_efficacy, na.rm = TRUE)
+  avg_pois_pop_estimate <- mean(pois_popoff_eff, na.rm = TRUE)
+  avg_pois_pt_estimate <- mean(pois_ptoff_eff, na.rm = TRUE)
+  avg_cox_estimate <- mean(cox_efficacy, na.rm = TRUE)
+  
+  # avg proportion of infector sources
+  avg_infected_within_block <- mean(source_block, na.rm = TRUE)
+  avg_infected_within_cluster <- mean(source_cluster, na.rm = TRUE)
+  avg_infected_from_community <- mean(source_community, na.rm = TRUE)
   
   return(list(avg_offspring = avg_offspring, var_offspring = var_offspring,
               avg_rr_peak = avg_rr_peak, var_rr_peak = var_rr_peak,
@@ -575,9 +658,27 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
               avg_prop_infected = avg_prop_infected, 
               avg_control_infected = avg_control_infected,
               avg_tirs_infected = avg_tirs_infected,
-              avg_pois_estimate = avg_pois_estimate))
+              avg_pois_estimate = avg_pois_estimate,
+              avg_pois_pop_estimate = avg_pois_pop_estimate,
+              avg_pois_pt_estimate = avg_pois_pt_estimate,
+              avg_cox_estimate = avg_cox_estimate,
+              avg_infected_within_block = avg_infected_within_block,
+              avg_infected_within_cluster = avg_infected_within_cluster,
+              avg_infected_from_community = avg_infected_from_community))
 }
 ```
+
+test
+```{r}
+help <- run_sims(
+  3, trial_pop = trial_pop, gen_prob = gen_prob, initially_infected = 1, 
+  alpha = -log((1.5 + 1 - n_per_block) / (1 - n_per_block)), 
+  beta = -log((1.5 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster)), 
+  gamma = 2, 
+  r = 0.5)
+data.frame(help)
+```
+
 
 ### Grid Search
 #### Num. Runs
@@ -601,19 +702,13 @@ trial_pop <- sim_pop(n_clusters, n_per_cluster, n_per_block)
 
 Parameters to test:
 ```{r}
-param_grid <- expand.grid(
-  alpha = c(   # block R0 = 1.5, 3, 4.5? 
-    -log((1.5 + 1 - n_per_block) / (1 - n_per_block)),
-    -log((3 + 1 - n_per_block) / (1 - n_per_block)),
-    -log((4.5 + 1 - n_per_block) / (1 - n_per_block))
-  ), 
-  beta  = c(   # cluster R0 = 1.5, 3, 4.5?
-    -log((1.5 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster)),
-    -log((3 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster)),
-    -log((4.5 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster))
-  ), 
-  gamma = c(0.5, 1, 2) # case rate 1/2 of that of city, matches, x2
-)
+param_grid <- expand.grid(block_R0   = c(1.6, 1.9, 2.2, 2.5), 
+                          cluster_R0 = c(1.6, 1.9, 2.2, 2.5), 
+                          gamma = c(0.5, 1, 2)) %>%
+  filter(block_R0 >= cluster_R0) %>%
+  mutate(alpha = -log((block_R0 + 1 - n_per_block) / (1 - n_per_block)), 
+         beta  = -log((cluster_R0 - n_per_cluster + n_per_block) /
+                 (n_per_block - n_per_cluster)))
 
 grid_results <- vector("list", nrow(param_grid))
 ```
@@ -638,13 +733,16 @@ for (p in 1:nrow(param_grid)) {
                              avg_prop_cases = round(sim_out$avg_prop_infected, 2),
                              avg_cases_control = round(sim_out$avg_control_infected, 2),
                              avg_cases_tirs = round(sim_out$avg_tirs_infected, 2),
-                             avg_eff_estimate = round(sim_out$avg_pois_estimate, 2)
+                             avg_eff_estimate_pno = round(sim_out$avg_pois_estimate, 2),
+                             avg_eff_estimate_ppop = round(sim_out$avg_pois_pop_estimate, 2),
+                             avg_eff_estimate_ppt = round(sim_out$avg_pois_pt_estimate, 2),
+                             avg_eff_estimate_cox = round(sim_out$avg_cox_estimate, 2)
                              )
 }
 Sys.time()
 
-grid_results_5ea <- bind_rows(grid_results)
-saveRDS(grid_results_5ea, file = "sim_results/param_grid_search/grid_results_5ea.rds")
+grid_results_5ea1 <- bind_rows(grid_results)
+saveRDS(grid_results_5ea1, file = "sim_results/param_grid_search/grid_results_5ea1.rds")
 ```
 
 10 runs each
@@ -696,62 +794,69 @@ for (p in 1:nrow(param_grid)) {
                              avg_prop_cases = round(sim_out$avg_prop_infected, 2),
                              avg_cases_control = round(sim_out$avg_control_infected, 2),
                              avg_cases_tirs = round(sim_out$avg_tirs_infected, 2),
-                             avg_eff_estimate = round(sim_out$avg_pois_estimate, 2)
+                             avg_eff_estimate_pno = round(sim_out$avg_pois_estimate, 2),
+                             avg_eff_estimate_ppop = round(sim_out$avg_pois_pop_estimate, 2),
+                             avg_eff_estimate_ppt = round(sim_out$avg_pois_pt_estimate, 2),
+                             avg_eff_estimate_cox = round(sim_out$avg_cox_estimate, 2)
                              )
 }
 Sys.time()
 
-grid_results_25ea <- bind_rows(grid_results)
-saveRDS(grid_results_25ea, file = "sim_results/param_grid_search/grid_results_25ea.rds")
+grid_results_25ea1 <- bind_rows(grid_results)
+saveRDS(grid_results_25ea1, file = "sim_results/param_grid_search/grid_results_25ea1.rds")
 ```
 
 ```{r}
-grid_results_25ea <- readRDS("sim_results/param_grid_search/grid_results_25ea.rds")
+grid_results_25ea1 <- readRDS("sim_results/param_grid_search/grid_results_25ea1.rds")
 ```
 
 ### Visualize Results
 Label parameters to make visuals easier
 ```{r}
-grid_results_25ea$alpha <- factor(
-  grid_results_25ea$alpha,
-  levels = c(   # block R0 = 1.5, 3, 4.5? 
-    -log((1.5 + 1 - n_per_block) / (1 - n_per_block)),
-    -log((3 + 1 - n_per_block) / (1 - n_per_block)),
-    -log((4.5 + 1 - n_per_block) / (1 - n_per_block))
+grid_results_25ea1$alpha <- factor(
+  grid_results_25ea1$alpha,
+  levels = c(   # block R0 = (1.6, 1.9, 2.2, 2.5)
+    -log((1.6 + 1 - n_per_block) / (1 - n_per_block)),
+    -log((1.9 + 1 - n_per_block) / (1 - n_per_block)),
+    -log((2.2 + 1 - n_per_block) / (1 - n_per_block)),
+    -log((2.5 + 1 - n_per_block) / (1 - n_per_block))
   ),
-  labels = c("block_R0_1.5", "block_R0_3", "block_R0_4.5")
+  labels = c("block_R0_1.6", "block_R0_1.9", "block_R0_2.2", "block_R0_2.5")
 )
 
-grid_results_25ea$beta <- factor(
-  grid_results_25ea$beta,
-  levels = c(   # cluster R0 = 1.5, 3, 4.5?
-    -log((1.5 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster)),
-    -log((3 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster)),
-    -log((4.5 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster))
+grid_results_25ea1$beta <- factor(
+  grid_results_25ea1$beta,
+  levels = c(   # cluster R0 = (1.6, 1.9, 2.2, 2.5)
+    -log((1.6 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster)),
+    -log((1.9 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster)),
+    -log((2.2 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster)),
+    -log((2.5 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster))
   ),
-  labels = c("cluster_R0_1.5", "cluster_R0_3", "cluster_R0_4.5")
+  labels = c("cluster_R0_1.6", "cluster_R0_1.9", "cluster_R0_2.2", "cluster_R0_2.5")
 )
 ```
 
 #### R_0
-
 ```{r}
-ggplot(grid_results_25ea,
+ggplot(grid_results_25ea1,
        aes(alpha, beta, fill = avg_R0)) +
   geom_tile() +
   facet_wrap(~ gamma) +
   scale_fill_viridis_c() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
-Since the model I'm using won't be able to track secondary infections coming 
-from the same imported infection, The R_0 here is really only the R_0 within the 
-cluster/trial area. As such, these graphs should be about the same across gamma 
-values.
+Average R_0 over all clusters seems to be highest when block R_0 is 2.5 and
+the cluster R_0 is not the same, but slightly lower, at 2.2. Not sure if this 
+is due to small simulation size (25)? I also expected these to be more similar
+across gamma but maybe the inclusion of non-susceptible adults affected something?
+Maybe...there are more susceptible adults getting cases from outside the cluster
+in higher values of gamma, so there are fewer people to infect? Hence a lower
+R_0? Maybe I should bump up population size slightly higher?
 
 #### RR peak
 
 ```{r}
-ggplot(grid_results_25ea,
+ggplot(grid_results_25ea1,
        aes(alpha, beta, fill = avg_RR_peak)) +
   geom_tile() +
   facet_wrap(~ gamma) +
@@ -777,56 +882,57 @@ increases greatly as there's more transmission among the cluster.
 
 #### Proportion of Cases
 ```{r}
-ggplot(grid_results_25ea,
+ggplot(grid_results_25ea1,
        aes(alpha, beta, fill = avg_prop_cases)) +
   geom_tile() +
   facet_wrap(~ gamma) +
   scale_fill_viridis_c() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
-This shows the proportion of the study population infected by the end of the 
-ABD season. The biggest change seems to be as the R_0 within the cluster 
-increases, though it also rises (at a lesser rate) as gamma increases. That is,
-imported cases seem to have a smaller effect on infection rate. ??
+Proportion of cases is still really high...this is at 5% of the adult population 
+not at risk for infection. How would this look with a bigger population? If 
+we're looking at a larger population over the same time frame, the proportion 
+should be smaller...but by how much?
 
-When comparing against the actual data --
-number cases in trial / total population of trial area: 0.005744335
-Which is a lot lower than anything i have here which makes sense considering my
-total population is much lower (500 per cluster vs ~2300 on avg per cluster; 
-and only 10 clusters here vs 50 clusters irl)
-ALSO i have the entire population as 100% susceptible which of course isn't true
-so of course more of the population here would get infected / a higher 
-proportion of the population would get infected
-
-so i should probably try running this on hipergator with a similar population 
-size first?
-
-#### Efficacy Estimate
+#### Efficacy Estimate (Poission, no offset)
 ```{r}
-ggplot(grid_results_25ea,
-       aes(alpha, beta, fill = avg_eff_estimate)) +
+ggplot(grid_results_5ea1,
+       aes(alpha, beta, fill = avg_eff_estimate_pno)) +
   geom_tile() +
   facet_wrap(~ gamma) +
   scale_fill_viridis_c() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
-I set the parameter r (reduction in infection due to intervention) as 0.5. When
-R_0 within the cluster is low, the intervention appears to work quite well.
-When R_0 within the cluster in high, the effect of the intervention quickly 
-drops.
 
-Efficacy in the actual data is 18.5% (5%, 30%) [no offset] which is closer to 
-the higher R_0 values for block and individual clusters (i.e., higher rates 
-of transmission overwhelm the effect of the treatment). 
+#### Efficacy Estimate (Poission, population offset)
+```{r}
+ggplot(grid_results_5ea1,
+       aes(alpha, beta, fill = avg_eff_estimate_ppop)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
 
-Note -- the paper found a community effect of 23.9, though this was looking at
-only the cases (both adult and children) that were within the trial area but
-were not participating in the trial. (different population)
+#### Efficacy Estimate (Poission, person-time offset)
+```{r}
+ggplot(grid_results_5ea1,
+       aes(alpha, beta, fill = avg_eff_estimate_ppt)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
 
-
-
-
-
+#### Efficacy Estimate (Cox)
+```{r}
+ggplot(grid_results_5ea1,
+       aes(alpha, beta, fill = avg_eff_estimate_cox)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
 
 
 
