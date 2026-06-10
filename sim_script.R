@@ -407,7 +407,7 @@ Gmu <- 2; Gs2 <- 1; max_gen_time <- 90 # 17 days?; 2 days?
 gen_prob <- gen_time(Gmu, Gs2, max_gen_time)
 
 # Population size
-n_clusters <- 50; n_per_cluster <- 2500; n_per_block <- 250
+n_clusters <- 10; n_per_cluster <- 500; n_per_block <- 50
 trial_pop <- sim_pop(n_clusters, n_per_cluster, n_per_block)
 
 ## parameters to test #############################################################
@@ -439,9 +439,15 @@ for (p in 1:nrow(param_grid)) {
                                   avg_prop_cases = round(sim_out$avg_prop_infected, 2),
                                   avg_cases_control = round(sim_out$avg_control_infected, 2),
                                   avg_cases_tirs = round(sim_out$avg_tirs_infected, 2),
-                                  avg_eff_estimate = round(sim_out$avg_pois_estimate, 2)
+                                  avg_eff_estimate_pNO = round(sim_out$avg_pois_estimate, 2),
+                                  avg_eff_estimate_pPop = round(sim_out$avg_pois_pop_estimate, 2),
+                                  avg_eff_estimate_pPT = round(sim_out$avg_pois_pt_estimate, 2),
+                                  avg_eff_estimate_Cox = round(sim_out$avg_cox_estimate, 2),
+                                  avg_infected_within_block = round(sim_out$avg_infected_within_block, 2),
+                                  avg_infected_within_cluster = round(sim_out$avg_infected_within_cluster, 2),
+                                  avg_infected_from_community = round(sim_out$avg_infected_from_community, 2)
   )
 }
 
-big_pop_25ea <- bind_rows(grid_results)
-saveRDS(big_pop_25ea, file = "output/sim_results/param_grid_search/big_pop_25ea.rds")
+test_sim_25 <- bind_rows(grid_results)
+saveRDS(test_sim_25, file = "output/sim_results/param_grid_search/test_sim_25.rds")

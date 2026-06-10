@@ -44,7 +44,7 @@ write.table(city_cases_by_week, file = "city_cases_by_week.txt", sep = " ",
             row.names = FALSE)
 
 ## divided by population...
-yuc_pop <- read.csv("RESAGEBURB2020 - 31 Yucatán.csv")
+yuc_pop <- read.csv("data/SINAVE_Data/RESAGEBURB2020 - 31 Yucatán.csv")
 
 I_m <- city_cases_by_week$cases_per_week #/ yuc_pop$POBTOT[1]
 ```
@@ -240,16 +240,6 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
   
   return(trial_pop = trial_pop)
 }
-```
-
-test
-```{r}
-infected_pop_test <- infect_pop(
-  trial_pop, gen_prob, initially_infected = 1, 
-  alpha = -log((1.5 + 1 - n_per_block) / (1 - n_per_block)), 
-  beta = -log((1.5 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster)), 
-  gamma = 2, 
-  r = 0.5)
 ```
 
 ## Parameter Testing
@@ -668,18 +658,6 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
 }
 ```
 
-test
-```{r}
-help <- run_sims(
-  3, trial_pop = trial_pop, gen_prob = gen_prob, initially_infected = 1, 
-  alpha = -log((1.5 + 1 - n_per_block) / (1 - n_per_block)), 
-  beta = -log((1.5 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster)), 
-  gamma = 2, 
-  r = 0.5)
-data.frame(help)
-```
-
-
 ### Grid Search
 #### Num. Runs
 Trial Population
@@ -807,7 +785,7 @@ saveRDS(grid_results_25ea1, file = "sim_results/param_grid_search/grid_results_2
 ```
 
 ```{r}
-grid_results_25ea1 <- readRDS("sim_results/param_grid_search/grid_results_25ea1.rds")
+test_sim_25 <- readRDS("sim_results/param_grid_search/grid_results_25ea1.rds")
 ```
 
 ### Visualize Results
