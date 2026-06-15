@@ -337,8 +337,9 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
     cox_dat <- infected_pop[infected_pop$index_case != 1,]
     # itt.cox <- coxph(Surv(entry, exit, Pos_All) ~ arm + cluster(cluster),
     #                   data = data)
+    cox_dat$exit_time <- ifelse(is.na(cox_dat$tau), trial_end, cox_dat$tau)
     cox_fit <- coxph(Surv(rep(26, nrow(cox_dat)), 
-                          tau, infected) ~ TIRS + cluster(Cluster),
+                          exit_time, infected) ~ TIRS + cluster(Cluster),
                      data = cox_dat)
     cox_efficacy[s] <- 1 - exp(coef(cox_fit))
     

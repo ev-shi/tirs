@@ -480,6 +480,16 @@ r_test_start_time
 
 ## Grid Search
 
+```{r}
+infected_pop <- infect_pop(trial_pop, gen_prob, 1, 
+                       alpha = -log((1.5 + 1 - n_per_block) 
+                                    / (1 - n_per_block)), 
+                       beta  = -log((1.5 - n_per_cluster + n_per_block)
+                                    / (n_per_block - n_per_cluster)),
+                       gamma = 2, r = 0.5)
+```
+
+
 ### Run Simulations Function
 ```{r}
 run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha, 
@@ -492,6 +502,7 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
   control_list <- list()
   tirs_list <- list()
   prop_infected <- c()
+  prop_infected_sus <- c()
   control_infected <- c()
   tirs_infected <- c()
   pois_efficacy <- c()
@@ -559,6 +570,9 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
     # proportion of population infected at end of season
     prop_infected[s] <- sum(incidence$cases) / (n_clusters*n_per_cluster)
     
+    # proportion of population infected at end of season out of susceptible pop
+    prop_infected_sus[s] <- sum(incidence$cases) / sum(trial_pop$susceptible)
+    
     # num infected by trial arm
     control_infected[s] <- sum(control$cases)
     tirs_infected[s] <- sum(tirs$cases)
@@ -601,8 +615,9 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
     cox_dat <- infected_pop[infected_pop$index_case != 1,]
         # itt.cox <- coxph(Surv(entry, exit, Pos_All) ~ arm + cluster(cluster),
         #                   data = data)
+    cox_dat$exit_time <- ifelse(is.na(cox_dat$tau), trial_end, cox_dat$tau)
     cox_fit <- coxph(Surv(rep(26, nrow(cox_dat)), 
-                                  tau, infected) ~ TIRS + cluster(Cluster),
+                                  exit_time, infected) ~ TIRS + cluster(Cluster),
                              data = cox_dat)
     cox_efficacy[s] <- 1 - exp(coef(cox_fit))
     
@@ -659,7 +674,6 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
 ```
 
 ### Grid Search
-#### Num. Runs
 Trial Population
 ```{r}
 min_age <- 1 # youngest age
@@ -669,7 +683,7 @@ trial_start <- 26
 trial_end <- 50 # 52 is the last week of the year but we don't have city incidence data for that??? so 50
 
 # parameters
-Gmu <- 2; Gs2 <- 1; max_gen_time <- 90 # 17 days?; 2 days?
+Gmu <- 2; Gs2 <- 1; max_gen_time <- 5 # 17 days?; 2 days?
 # probability that the generation time = [index]
 gen_prob <- gen_time(Gmu, Gs2, max_gen_time)
 
@@ -691,108 +705,50 @@ param_grid <- expand.grid(block_R0   = c(1.6, 1.9, 2.2, 2.5),
 grid_results <- vector("list", nrow(param_grid))
 ```
 
-5 runs each
-```{r, eval=FALSE}
-Sys.time()
+
+#####test
+```{r}
 for (p in 1:nrow(param_grid)) {
   a <- param_grid$alpha[p]
   b <- param_grid$beta[p]
   g <- param_grid$gamma[p]
   
-  sim_out <- run_sims(5, trial_pop, gen_prob, 1, a, b, g, r = 0.5)
+  sim_out <- run_sims(1, trial_pop, gen_prob, 1, a, b, g, r = 0.5)
   
   grid_results[[p]] <- data.frame(alpha = a,
-                             beta = b,
-                             gamma = g,
-                             avg_R0 = round(sim_out$avg_offspring, 2),
-                             var_R0 = round(sim_out$var_offspring, 2),
-                             avg_RR_peak = round(sim_out$avg_rr_peak, 2),
-                             avg_time_diff = round(sim_out$avg_time_diff, 2),
-                             avg_prop_cases = round(sim_out$avg_prop_infected, 2),
-                             avg_cases_control = round(sim_out$avg_control_infected, 2),
-                             avg_cases_tirs = round(sim_out$avg_tirs_infected, 2),
-                             avg_eff_estimate_pno = round(sim_out$avg_pois_estimate, 2),
-                             avg_eff_estimate_ppop = round(sim_out$avg_pois_pop_estimate, 2),
-                             avg_eff_estimate_ppt = round(sim_out$avg_pois_pt_estimate, 2),
-                             avg_eff_estimate_cox = round(sim_out$avg_cox_estimate, 2)
-                             )
+                                  beta = b,
+                                  gamma = g,
+                                  avg_R0 = round(sim_out$avg_offspring, 2),
+                                  var_R0 = round(sim_out$var_offspring, 2),
+                                  avg_RR_peak = round(sim_out$avg_rr_peak, 2),
+                                  avg_time_diff = round(sim_out$avg_time_diff, 2),
+                                  avg_prop_cases = round(sim_out$avg_prop_infected, 2),
+                                  avg_cases_control = round(sim_out$avg_control_infected, 2),
+                                  avg_cases_tirs = round(sim_out$avg_tirs_infected, 2),
+                                  avg_eff_estimate_pNO = round(sim_out$avg_pois_estimate, 2),
+                                  avg_eff_estimate_pPop = round(sim_out$avg_pois_pop_estimate, 2),
+                                  avg_eff_estimate_pPT = round(sim_out$avg_pois_pt_estimate, 2),
+                                  avg_eff_estimate_Cox = round(sim_out$avg_cox_estimate, 2),
+                                  avg_infected_within_block = round(sim_out$avg_infected_within_block, 2),
+                                  avg_infected_within_cluster = round(sim_out$avg_infected_within_cluster, 2),
+                                  avg_infected_from_community = round(sim_out$avg_infected_from_community, 2)
+  )
 }
-Sys.time()
 
-grid_results_5ea1 <- bind_rows(grid_results)
-saveRDS(grid_results_5ea1, file = "sim_results/param_grid_search/grid_results_5ea1.rds")
+test <- bind_rows(grid_results)
 ```
 
-10 runs each
-```{r, eval=FALSE}
-Sys.time()
-for (p in 1:nrow(param_grid)) {
-  a <- param_grid$alpha[p]
-  b <- param_grid$beta[p]
-  g <- param_grid$gamma[p]
-  
-  sim_out <- run_sims(10, trial_pop, gen_prob, 1, a, b, g, r = 0.5)
-  
-  grid_results[[p]] <- data.frame(alpha = a,
-                             beta = b,
-                             gamma = g,
-                             avg_R0 = round(sim_out$avg_offspring, 2),
-                             var_R0 = round(sim_out$var_offspring, 2),
-                             avg_RR_peak = round(sim_out$avg_rr_peak, 2),
-                             avg_time_diff = round(sim_out$avg_time_diff, 2),
-                             avg_prop_cases = round(sim_out$avg_prop_infected, 2),
-                             avg_cases_control = round(sim_out$avg_control_infected, 2),
-                             avg_cases_tirs = round(sim_out$avg_tirs_infected, 2),
-                             avg_eff_estimate = round(sim_out$avg_pois_estimate, 2)
-                             )
-}
-Sys.time()
 
-grid_results_10ea <- bind_rows(grid_results)
-saveRDS(grid_results_10ea, file = "sim_results/param_grid_search/grid_results_10ea.rds")
-```
-
-25 runs each
-```{r, eval=FALSE}
-Sys.time()
-for (p in 1:nrow(param_grid)) {
-  a <- param_grid$alpha[p]
-  b <- param_grid$beta[p]
-  g <- param_grid$gamma[p]
-  
-  sim_out <- run_sims(25, trial_pop, gen_prob, 1, a, b, g, r = 0.5)
-  
-  grid_results[[p]] <- data.frame(alpha = a,
-                             beta = b,
-                             gamma = g,
-                             avg_R0 = round(sim_out$avg_offspring, 2),
-                             var_R0 = round(sim_out$var_offspring, 2),
-                             avg_RR_peak = round(sim_out$avg_rr_peak, 2),
-                             avg_time_diff = round(sim_out$avg_time_diff, 2),
-                             avg_prop_cases = round(sim_out$avg_prop_infected, 2),
-                             avg_cases_control = round(sim_out$avg_control_infected, 2),
-                             avg_cases_tirs = round(sim_out$avg_tirs_infected, 2),
-                             avg_eff_estimate_pno = round(sim_out$avg_pois_estimate, 2),
-                             avg_eff_estimate_ppop = round(sim_out$avg_pois_pop_estimate, 2),
-                             avg_eff_estimate_ppt = round(sim_out$avg_pois_pt_estimate, 2),
-                             avg_eff_estimate_cox = round(sim_out$avg_cox_estimate, 2)
-                             )
-}
-Sys.time()
-
-grid_results_25ea1 <- bind_rows(grid_results)
-saveRDS(grid_results_25ea1, file = "sim_results/param_grid_search/grid_results_25ea1.rds")
-```
 
 ```{r}
-test_sim_25 <- readRDS("sim_results/param_grid_search/grid_results_25ea1.rds")
+test_sim_25 <- readRDS("sim_results/param_grid_search/test_sim_25.rds")
 ```
 
 ### Visualize Results
 Label parameters to make visuals easier
 ```{r}
-grid_results_25ea1$alpha <- factor(
-  grid_results_25ea1$alpha,
+test_sim_25$alpha <- factor(
+  test_sim_25$alpha,
   levels = c(   # block R0 = (1.6, 1.9, 2.2, 2.5)
     -log((1.6 + 1 - n_per_block) / (1 - n_per_block)),
     -log((1.9 + 1 - n_per_block) / (1 - n_per_block)),
@@ -802,8 +758,8 @@ grid_results_25ea1$alpha <- factor(
   labels = c("block_R0_1.6", "block_R0_1.9", "block_R0_2.2", "block_R0_2.5")
 )
 
-grid_results_25ea1$beta <- factor(
-  grid_results_25ea1$beta,
+test_sim_25$beta <- factor(
+  test_sim_25$beta,
   levels = c(   # cluster R0 = (1.6, 1.9, 2.2, 2.5)
     -log((1.6 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster)),
     -log((1.9 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster)),
@@ -816,66 +772,50 @@ grid_results_25ea1$beta <- factor(
 
 #### R_0
 ```{r}
-ggplot(grid_results_25ea1,
+ggplot(test_sim_25,
        aes(alpha, beta, fill = avg_R0)) +
   geom_tile() +
   facet_wrap(~ gamma) +
   scale_fill_viridis_c() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
-Average R_0 over all clusters seems to be highest when block R_0 is 2.5 and
-the cluster R_0 is not the same, but slightly lower, at 2.2. Not sure if this 
-is due to small simulation size (25)? I also expected these to be more similar
-across gamma but maybe the inclusion of non-susceptible adults affected something?
-Maybe...there are more susceptible adults getting cases from outside the cluster
-in higher values of gamma, so there are fewer people to infect? Hence a lower
-R_0? Maybe I should bump up population size slightly higher?
+possible reasons why so many people are getting infected
+--susceptibility too low (as matt suggested)
+--my max generation time was way too high so all formerly infected persons were 
+  forever contributing to hazard
+--would the R_0 and the R_0 from the cluster be additive? is that why i’m 
+  getting like…..an R_0 of 5 if i have 2.5 and 2.5 for block and cluster R_0?
+
 
 #### RR peak
 
 ```{r}
-ggplot(grid_results_25ea1,
+ggplot(test_sim_25,
        aes(alpha, beta, fill = avg_RR_peak)) +
   geom_tile() +
   facet_wrap(~ gamma) +
   scale_fill_viridis_c() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
-Average RR_0 peak here is the ratio in case rate (no. cases / total
-population of the area) between the epidemic peak in the study area and the 
-peak for the entire city; i.e., case rate of study / case rate of city...
+Right, so this is only = to gamma when alpha and beta are 0. i'm effectively 
+ignoring similar situations in the rest of the city? something like that man
 
-What should I expect for this to look like over different gamma? This should
-= gamma, yes?
-
-study_peak <- max(incidence$case_rate)
-real_peak <- max(real_df$case_rate)
-
-rr_peak[s] <- study_peak / real_peak # difference in magnitude
-
-Well ok no it's = gamma when alpha and beta are 0....those are driving the 
-case rate up...so the difference in magnitude between study and city is already
-pretty high, even if there is a low number of imported cases, but this magnitude
-increases greatly as there's more transmission among the cluster.
 
 #### Proportion of Cases
 ```{r}
-ggplot(grid_results_25ea1,
+ggplot(test_sim_25,
        aes(alpha, beta, fill = avg_prop_cases)) +
   geom_tile() +
   facet_wrap(~ gamma) +
   scale_fill_viridis_c() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
-Proportion of cases is still really high...this is at 5% of the adult population 
-not at risk for infection. How would this look with a bigger population? If 
-we're looking at a larger population over the same time frame, the proportion 
-should be smaller...but by how much?
+Still pretty high...I didn't change the susceptibility for this one yet...
 
 #### Efficacy Estimate (Poission, no offset)
 ```{r}
-ggplot(grid_results_5ea1,
-       aes(alpha, beta, fill = avg_eff_estimate_pno)) +
+ggplot(test_sim_25,
+       aes(alpha, beta, fill = avg_eff_estimate_pNO)) +
   geom_tile() +
   facet_wrap(~ gamma) +
   scale_fill_viridis_c() +
@@ -884,8 +824,8 @@ ggplot(grid_results_5ea1,
 
 #### Efficacy Estimate (Poission, population offset)
 ```{r}
-ggplot(grid_results_5ea1,
-       aes(alpha, beta, fill = avg_eff_estimate_ppop)) +
+ggplot(test_sim_25,
+       aes(alpha, beta, fill = avg_eff_estimate_pPop)) +
   geom_tile() +
   facet_wrap(~ gamma) +
   scale_fill_viridis_c() +
@@ -894,8 +834,8 @@ ggplot(grid_results_5ea1,
 
 #### Efficacy Estimate (Poission, person-time offset)
 ```{r}
-ggplot(grid_results_5ea1,
-       aes(alpha, beta, fill = avg_eff_estimate_ppt)) +
+ggplot(test_sim_25,
+       aes(alpha, beta, fill = avg_eff_estimate_pPT)) +
   geom_tile() +
   facet_wrap(~ gamma) +
   scale_fill_viridis_c() +
@@ -904,8 +844,41 @@ ggplot(grid_results_5ea1,
 
 #### Efficacy Estimate (Cox)
 ```{r}
-ggplot(grid_results_5ea1,
-       aes(alpha, beta, fill = avg_eff_estimate_cox)) +
+ggplot(test_sim_25,
+       aes(alpha, beta, fill = avg_eff_estimate_Cox)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+#### Proportion of Infections from within the Block
+```{r}
+ggplot(test_sim_25,
+       aes(alpha, beta, fill = avg_infected_within_block)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Alright, not sure if this is the right way to display this, may be more 
+informative to show all three proportions at once?
+
+#### Proportion of Infections from within the Cluster
+```{r}
+ggplot(test_sim_25,
+       aes(alpha, beta, fill = avg_infected_within_cluster)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+#### Proportion of Infections from Community
+```{r}
+ggplot(test_sim_25,
+       aes(alpha, beta, fill = avg_infected_from_community)) +
   geom_tile() +
   facet_wrap(~ gamma) +
   scale_fill_viridis_c() +
@@ -913,10 +886,144 @@ ggplot(grid_results_5ea1,
 ```
 
 
+```{r}
+test_sim_maxgentime <- readRDS("sim_results/param_grid_search/test_sim_maxgentime.rds")
+```
 
+### Visualize Results (Max GenTime)
+Label parameters to make visuals easier
+```{r}
+test_sim_maxgentime$alpha <- factor(
+  test_sim_maxgentime$alpha,
+  levels = c(   # block R0 = (1.6, 1.9, 2.2, 2.5)
+    -log((1.6 + 1 - n_per_block) / (1 - n_per_block)),
+    -log((1.9 + 1 - n_per_block) / (1 - n_per_block)),
+    -log((2.2 + 1 - n_per_block) / (1 - n_per_block)),
+    -log((2.5 + 1 - n_per_block) / (1 - n_per_block))
+  ),
+  labels = c("block_R0_1.6", "block_R0_1.9", "block_R0_2.2", "block_R0_2.5")
+)
 
+test_sim_maxgentime$beta <- factor(
+  test_sim_maxgentime$beta,
+  levels = c(   # cluster R0 = (1.6, 1.9, 2.2, 2.5)
+    -log((1.6 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster)),
+    -log((1.9 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster)),
+    -log((2.2 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster)),
+    -log((2.5 - n_per_cluster + n_per_block) / (n_per_block - n_per_cluster))
+  ),
+  labels = c("cluster_R0_1.6", "cluster_R0_1.9", "cluster_R0_2.2", "cluster_R0_2.5")
+)
+```
 
+#### R_0
+```{r}
+ggplot(test_sim_maxgentime,
+       aes(alpha, beta, fill = avg_R0)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Ok!!! So R_0 seems to make more sense here? not values like 5. This with
+a susceptibility of 70% of adults susceptible (30% not at risk)
 
+#### RR peak
+```{r}
+ggplot(test_sim_maxgentime,
+       aes(alpha, beta, fill = avg_RR_peak)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Still pretty high but better in comparison? and the pattern across gamma seems
+pretty good
+
+#### Proportion of Cases
+```{r}
+ggplot(test_sim_maxgentime,
+       aes(alpha, beta, fill = avg_prop_cases)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+This is definitely still too high...but with bigger population? 
+
+#### Efficacy Estimate (Poission, no offset)
+```{r}
+ggplot(test_sim_maxgentime,
+       aes(alpha, beta, fill = avg_eff_estimate_pNO)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+#### Efficacy Estimate (Poission, population offset)
+```{r}
+ggplot(test_sim_maxgentime,
+       aes(alpha, beta, fill = avg_eff_estimate_pPop)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+#### Efficacy Estimate (Poission, person-time offset)
+```{r}
+ggplot(test_sim_maxgentime,
+       aes(alpha, beta, fill = avg_eff_estimate_pPT)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+#### Efficacy Estimate (Cox)
+```{r}
+ggplot(test_sim_maxgentime,
+       aes(alpha, beta, fill = avg_eff_estimate_Cox)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Ok this was coded incorrectly, so hopefully it's fixed now...
+
+#### Proportion of Infections from within the Block
+```{r}
+ggplot(test_sim_maxgentime,
+       aes(alpha, beta, fill = avg_infected_within_block)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Alright, not sure if this is the right way to display this, may be more 
+informative to show all three proportions at once?
+
+#### Proportion of Infections from within the Cluster
+```{r}
+ggplot(test_sim_maxgentime,
+       aes(alpha, beta, fill = avg_infected_within_cluster)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+#### Proportion of Infections from Community
+```{r}
+ggplot(test_sim_maxgentime,
+       aes(alpha, beta, fill = avg_infected_from_community)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
 
 
 
