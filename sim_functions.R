@@ -43,7 +43,7 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
   # susceptibility
   trial_pop$susceptible <- 1
   adult_ids <- which(trial_pop$Age >= 18)
-  immune_adults <- sample(adult_ids, size = round(0.05 * length(adult_ids))) # 5% adults immune??
+  immune_adults <- sample(adult_ids, size = round(0.30 * length(adult_ids))) 
   trial_pop$susceptible[immune_adults] <- 0
   
   # tracking infectors
@@ -184,7 +184,7 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
   infected_TIRS_ids <- which(trial_pop$infected == 1 & 
                                trial_pop$TIRS_cohort == 1)
   reported_tirs_ids <- sample(infected_TIRS_ids, 
-                              size = round(0.9 * length(infected_TIRS_ids)))
+                              size = round(0.8 * length(infected_TIRS_ids)))
   infected_sinave_ids <- which(trial_pop$infected == 1 & 
                                  trial_pop$TIRS_cohort == 0)
   reported_sinave_ids <- sample(infected_sinave_ids, 
@@ -194,6 +194,9 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
   
   return(trial_pop = trial_pop)
 }
+
+## extra ##################################################################################################
+format <- function(x) gsub("\\.", "p", sprintf("%.2f", x)) 
 
 ## run simulation ##########################################################################################
 run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha, 
@@ -225,9 +228,20 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
     case_rate = city_cases_by_week$cases_per_week / yuc_pop$POBTOT[1])
   
   for (s in 1:num_sims) {
+    # infected population
     infected_pop <- infect_pop(trial_pop, gen_prob, initially_infected, 
                                alpha = alpha, beta = beta, gamma = gamma, r = r)
+    # save this population
+    name <- paste0("blockRe", format((n_per_block - 1) * (1 - exp(-alpha))), 
+                     "_clusterRe", format((n_per_cluster - n_per_block) * 
+                                            (1 - exp(-beta))),
+                     "_gamma", format(gamma),
+                   "_sim", s)
+    outfile <- file.path(here::here("output", "sim_results", "populations"), 
+                         paste0(name, ".csv"))
+    write.csv(infected_pop, file = outfile)
     
+    # inference
     # epidemic curve
     ## average incidence across simulations
     incidence <- infected_pop %>% 

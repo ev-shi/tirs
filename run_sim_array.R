@@ -61,7 +61,7 @@ sim_out <- run_sims(
   num_sims = 5, 
   trial_pop = trial_pop, 
   gen_prob = gen_prob, 
-  initially_infected = 5, 
+  initially_infected = 25, 
   alpha = alpha, 
   beta = beta, 
   gamma = gamma, 
@@ -75,7 +75,7 @@ file_stem <- paste0(
   "_cluster", snum(cluster_R0),
   "_gamma", snum(gamma)
 )
-outfile <- file.path("output/sim_results", paste0(file_stem, ".rds"))
+outfile <- file.path(here::here("output", "sim_results"), 
+                     paste0(file_stem, ".rds"))
 
 saveRDS(sim_out, file = outfile)
-cat("Finished -- results written to ", outfile, "\n")

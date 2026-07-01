@@ -764,6 +764,80 @@ n_clusters <- 10; n_per_cluster <- 500; n_per_block <- 50
 trial_pop <- sim_pop(n_clusters, n_per_cluster, n_per_block)
 ```
 
+```{r}
+sim_out <- run_sims(5, trial_pop, gen_prob, 5, 
+                       alpha = -log((1.5 + 1 - n_per_block) 
+                                    / (1 - n_per_block)), 
+                       beta  = -log((1.5 - n_per_cluster + n_per_block)
+                                    / (n_per_block - n_per_cluster)),
+                       gamma = 2, r = 0.5)
+```
+
+### makings params.txt
+```{r}
+param_grid <- expand.grid(block_R0   = c(0.3, 0.4, 0.5, 0.6, 0.7), 
+                          cluster_R0 = c(0.3, 0.4, 0.5, 0.6, 0.7), 
+                          gamma = c(0.5, 1, 2)) %>%
+  filter(block_R0 >= cluster_R0)
+```
+
+```{r}
+write.table(param_grid[, c("block_R0", "cluster_R0", "gamma")],
+            file = "params.txt", sep = " ", row.names = FALSE, 
+            col.names = FALSE, quote = FALSE)
+```
+
+
+### GS on computer
+```{r}
+param_grid <- expand.grid(block_R0   = c(1.6, 1.9, 2.2, 2.5), 
+                          cluster_R0 = c(1.6, 1.9, 2.2, 2.5), 
+                          gamma = c(0.5, 1, 2)) %>%
+  filter(block_R0 >= cluster_R0) %>%
+  mutate(alpha = -log((block_R0 + 1 - n_per_block) / (1 - n_per_block)), 
+         beta  = -log((cluster_R0 - n_per_cluster + n_per_block) /
+                        (n_per_block - n_per_cluster)))
+
+grid_results <- vector("list", nrow(param_grid))
+```
+
+```{r}
+for (p in 1:nrow(param_grid)) {
+  a <- param_grid$alpha[p]
+  b <- param_grid$beta[p]
+  g <- param_grid$gamma[p]
+  
+  sim_out <- run_sims(25, trial_pop, gen_prob, 5, a, b, g, r = 0.5)
+  
+  grid_results[[p]] <- data.frame(alpha = a,
+                                  beta = b,
+                                  gamma = g,
+                                  avg_R0_c = round(sim_out$avg_offspring_c, 2),
+                                  var_R0_c = round(sim_out$var_offspring_c, 2),
+                                  avg_R0_t = round(sim_out$avg_offspring_t, 2),
+                                  var_R0_t = round(sim_out$var_offspring_t, 2),
+                                  avg_RR_peak = round(sim_out$avg_rr_peak, 2),
+                                  avg_time_diff = round(sim_out$avg_time_diff, 2),
+                                  avg_prop_cases = round(sim_out$avg_prop_infected, 2),
+                                  avg_prop_sus_cases = round(sim_out$avg_prop_inf_sus, 2),
+                                  avg_cases_control = round(sim_out$avg_control_infected, 2),
+                                  avg_cases_tirs = round(sim_out$avg_tirs_infected, 2),
+                                  avg_eff_estimate_pNO = round(sim_out$avg_pois_estimate, 2),
+                                  avg_pois_reported = round(sim_out$avg_pois_reported_est, 2),
+                                  avg_eff_estimate_pPop = round(sim_out$avg_pois_pop_estimate, 2),
+                                  avg_eff_estimate_pPT = round(sim_out$avg_pois_pt_estimate, 2),
+                                  avg_eff_estimate_Cox = round(sim_out$avg_cox_estimate, 2),
+                                  avg_cox_reported = round(sim_out$avg_cox_reported_est, 2),
+                                  avg_infected_within_block = round(sim_out$avg_infected_within_block, 2),
+                                  avg_infected_within_cluster = round(sim_out$avg_infected_within_cluster, 2),
+                                  avg_infected_from_community = round(sim_out$avg_infected_from_community, 2)
+  )
+}
+
+reporting_test <- bind_rows(grid_results)
+saveRDS(reporting_test, file = "output/sim_results/param_grid_search/reporting_test.rds")
+```
+
 
 ### Visualize Results
 ```{r}
@@ -1209,9 +1283,115 @@ ggplot(test_sim_lower_Re,
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
+# Visualize Results
+get all my output and put in one dataframe
+```{r}
+sim_output <- list.files("sim_results/param_grid_search/sim_test", 
+                         pattern = "\\.rds$", full.names = TRUE)
+
+sim_df <- purrr::map_dfr(sim_output, function(f) {
+  out  <- readRDS(f)
+  meta <- str_match(basename(f),
+                    "block([0-9]+p[0-9]+)_cluster([0-9]+p[0-9]+)_gamma([0-9]+p[0-9]+)")
+  
+  tibble(
+    block_R0   = as.numeric(str_replace(meta[1, 2], "p", ".") ),
+    cluster_R0 = as.numeric(str_replace(meta[1, 3], "p", ".") ),
+    gamma      = as.numeric(str_replace(meta[1, 4], "p", ".") ),
+    !!!out
+  )
+})
+
+sim_df <- sim_df %>% 
+  mutate(across(where(is.numeric), ~ round(., 2)))
+```
+
+```{r}
+sim_df$expected_block_Re <- sim_df$block_R0
+sim_df$expected_cluster_Re <- sim_df$cluster_R0
+sim_df$expected_overall_Re <- (sim_df$expected_block_Re +
+  sim_df$expected_cluster_Re) * 0.95 # i forgot to change it from 5% :(
+sim_df$Re_diff <- abs(sim_df$expected_overall_Re - 
+  sim_df$avg_offspring_c)
+```
+
+#### R_e (control)
+```{r}
+ggplot(sim_df,
+       aes(factor(block_R0), factor(cluster_R0), fill = Re_diff)) +
+  geom_tile() +
+  geom_text(aes(label = sprintf("%.2f - %.2f", expected_overall_Re, avg_offspring_c)),
+            colour   = "white", 
+            size     = 2,
+            fontface = "bold") +
+  facet_wrap(~ gamma, nrow = 3) +
+  scale_fill_gradient(name = "Diff in R_e\n(EX - Sim)") +
+  labs(
+    title = "Expected vs. Simulated Re (5 sims,95% adults susceptible,\n large pop)",
+    subtitle = "Each tile: Expected - Simulated",
+    x = expression(block_Re (alpha)),
+    y = expression(cluster_Re (beta))
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 15, hjust = 1))
+```
+This is with 5 index cases in a much larger population...but only 5 simulations
+for each parameter group. The differences in expected Re and simulated Re are 
+higher that I expected, especially for gamma = 1 and higher cluster and block
+Re...is there like one simulation result that's throwing the average way off?
+
+# estimated efficacy (poissson)
+```{r}
+ggplot(sim_df,
+       aes(factor(block_R0), factor(cluster_R0), fill = avg_pois_estimate)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+ggplot(sim_df,
+       aes(factor(block_R0), factor(cluster_R0), fill = avg_pois_reported_est)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+ggplot(sim_df,
+       aes(factor(block_R0), factor(cluster_R0), fill = avg_cox_estimate)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+ggplot(sim_df,
+       aes(factor(block_R0), factor(cluster_R0), fill = avg_cox_reported_est)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
 
 
+```{r}
+ggplot(sim_df,
+       aes(factor(block_R0), factor(cluster_R0), fill = avg_prop_inf_sus)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
 
-
-
-
+```{r}
+ggplot(sim_df,
+       aes(factor(block_R0), factor(cluster_R0), fill = avg_prop_infected)) +
+  geom_tile() +
+  facet_wrap(~ gamma) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
