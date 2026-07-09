@@ -49,8 +49,11 @@ city_cases_by_week <- sinave_dengue_cases %>%
   count(Week_onset, name = "cases_per_week")
 
 ## divided by population...
-yuc_pop <- read.csv(here("data", "SINAVE_Data", "yuc_data.csv"))
-I_m <- city_cases_by_week$cases_per_week #/ yuc_pop$POBTOT[1]
+merida_pop <- read.csv("data/yuc_pop_all.csv") %>% # all of yucatan
+  filter(MUN == 50 | MUN == 41 | MUN == 101) %>% # only metro area of merida
+  filter(NOM_LOC == "Total del municipio") # only total pops
+
+I_m <- city_cases_by_week$cases_per_week #/ sum(merida_pop$POBTOT)
 
 # make population and generation time ######################################################################
 gen_prob <- gen_time(Gmu, Gs2, max_gen_time)
@@ -58,14 +61,14 @@ trial_pop <- sim_pop(n_clusters, n_per_cluster, n_per_block)
 
 ## run simulation ###########################################################################################
 sim_out <- run_sims(
-  num_sims = 5, 
+  num_sims = 10, 
   trial_pop = trial_pop, 
   gen_prob = gen_prob, 
   initially_infected = 25, 
   alpha = alpha, 
   beta = beta, 
   gamma = gamma, 
-  r = 0.5
+  r = 0.039
 )
 
 ## print sim results #######################################################################################

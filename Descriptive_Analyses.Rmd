@@ -40,13 +40,16 @@ pacman::p_load(sf, # spatial
 Read in data
 ```{r}
 # ## Population of Mérida + Kanasín (old)
-yuc_pop <- read.csv("RESAGEBURB2020 - 31 Yucatán.csv")
+yuc_pop <- read.csv("data/SINAVE_Data/RESAGEBURB2020 - 31 Yucatán.csv")
+
+merida_pop <- read.csv("data/yuc_pop/yuc_pop_all.csv") %>% # all of yucatan
+  filter(MUN == 50 | MUN == 41 | MUN == 101) # only metro merida
 
 ## Mérida + Kanasín shapefile from INEGI (eem - Block Polygons)
 merida_block_sf <- st_read(dsn = here("31_yucatan_2020/conjunto_de_datos"),
                     layer = "31m")
 merida_block_sf <- merida_block_sf %>% 
-  filter(CVE_MUN == "041" | CVE_MUN == "050")
+  filter(CVE_MUN == "041" | CVE_MUN == "050" | CVE_MUN == "100")
 
 ## Mérida + Kanasín shapefile from INEGI (eea - Basic Urban Geostatistical Areas)
 merida_cluster_sf <- st_read(dsn = here("31_yucatan_2020/conjunto_de_datos"),
@@ -138,22 +141,21 @@ to include extra data
 ```{r}
 # Population Data
 ## add CVEGEO to population dataset
-yuc_pop <- yuc_pop %>%
+merida_pop <- merida_pop %>%
   mutate(CVE_ENT = as.character(ENTIDAD),
          CVE_MUN = paste0("0", MUN),
          CVE_LOC = paste0("000", LOC),
          CVE_AGEB = AGEB,
-         CVE_MZA = ifelse(nchar(as.character(yuc_pop$MZA)) == 3,
+         CVE_MZA = ifelse(nchar(as.character(merida_pop$MZA)) == 3,
                           as.character(MZA),
-                          ifelse(nchar(as.character(yuc_pop$MZA)) == 2,
+                          ifelse(nchar(as.character(merida_pop$MZA)) == 2,
                                  paste0("0", MZA), paste0("00", MZA))),
          CVEGEO = paste0(CVE_ENT, CVE_MUN, CVE_LOC, CVE_AGEB, CVE_MZA))
-yuc_pop <- yuc_pop[-c(1:3),]
 
 ## now add this population data into the shapefile to get a shapefile with pop
 ##   data
 merida_block_sf <- merida_block_sf %>% 
-  right_join(yuc_pop, by = c("CVEGEO", "CVE_ENT", "CVE_MUN",
+  right_join(merida_pop, by = c("CVEGEO", "CVE_ENT", "CVE_MUN",
                                      "CVE_LOC", "CVE_AGEB", "CVE_MZA"))
 
 # Case Data
@@ -215,7 +217,7 @@ yuc_pop %>%
 # select cases of all the CONFIRMED 2023 dengue cases
 sinave_all_dengue <- sinave_all_cases %>% 
   # only want data for Mérida + Kanasín (050, 041 MUNICIPO_RES)
-  filter(MUNICIPIO_RES == 50 | MUNICIPIO_RES == 41) %>% 
+  filter(MUNICIPIO_RES == 50 | MUNICIPIO_RES == 41 | MUNICIPIO_RES == 101) %>% 
   # change symptom onset date to match cases dataset (i.e., weeks since 
   #  start of ABD season)
   mutate(Week_onset = ymd(FECHA_SIGN_SINTOMAS),
@@ -316,15 +318,28 @@ Comparing proportion of cases within the study area vs the rest of the city?
 ```{r}
 # All confirmed cases in Mérida caught by MOH / total population of Mérida
 # sinave_all_dengue is all confirmed dengue cases in the city
-nrow(sinave_all_dengue) / sum(merida_block_sf$POBTOT)
+merida_block_sf <- merida_block_sf %>% 
+  filter(AGEB != "0000") %>% 
+  filter(NOM_LOC != "Total AGEB urbana")
+
+totals <- merida_pop %>% 
+  filter(merida_pop$LOC == 0)
+
+nrow(sinave_all_dengue) / sum(totals$POBTOT)
+
+# adults in city
+sum(as.numeric(totals$P_18YMAS))
+# children in city
+sum(totals$POBTOT) - sum(as.numeric(totals$P_18YMAS))
 
 # trial area
 # num cases in trial / total population of trial area
 # denv_cases_sf is all the confirmed dengue cases within the tirs trial area
 nrow(denv_cases_sf) / sum(clusters_sf$POBTOT)
+sum(as.numeric(clusters_sf$P_18YMAS), na.rm = TRUE)
 ```
 Number of dengue cases in city: `r nrow(sinave_all_dengue)`
-Population of the city: `r sum(merida_block_sf$POBTOT)`
+Population of the city: `r sum(totals$POBTOT)`
 Number of dengue cases in trial area: `r nrow(denv_cases_sf) `
 Population of the trial area: `r sum(clusters_sf$POBTOT)`
 

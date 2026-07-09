@@ -43,8 +43,12 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
   # susceptibility
   trial_pop$susceptible <- 1
   adult_ids <- which(trial_pop$Age >= 18)
-  immune_adults <- sample(adult_ids, size = round(0.30 * length(adult_ids))) 
+  immune_adults <- sample(adult_ids, size = round(0.3 * length(adult_ids)))
   trial_pop$susceptible[immune_adults] <- 0
+  
+  kid_ids <- which(trial_pop$Age < 18) 
+  immune_kids <- sample(kid_ids, size = round(0.3 * length(kid_ids)))
+  trial_pop$susceptible[immune_kids] <- 0
   
   # tracking infectors
   susceptible_ids <- which(trial_pop$susceptible == 1)
@@ -106,7 +110,7 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
       for (z in trial_start:(t-1)) {
         dt <- t - z
         if (dt <= max_gen_time) {
-          lambda_jm <- lambda_jm + gamma * (I_m[z] / yuc_pop$POBTOT[1]) * gen_prob[dt]
+          lambda_jm <- lambda_jm + gamma * (I_m[z] / sum(merida_pop$POBTOT)) * gen_prob[dt]
           # hazard from a case in merid * cases rate in merida * prob gen time is dt
         }
       }
@@ -176,7 +180,7 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
   trial_pop$TIRS_cohort <- 0
   trial_pop$reported <- 0
   
-  kid_ids <- which(trial_pop$Age < 18) # TIRS cohort 15% of total kids
+  # TIRS cohort 15% of total kids
   TIRS_ids <- sample(kid_ids, size = round(0.15 * length(kid_ids))) 
   trial_pop$TIRS_cohort[TIRS_ids] <- 1
   
@@ -222,26 +226,19 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
   source_community <- c()
   source_block <- c()
   source_cluster <- c()
+  cox_tirs <- c()
+  cox_tirs_r <- c()
+  pois_community <- c()
+  pois_community_r <- c()
   
   real_df <- data.frame(
     time = 1:trial_end,
-    case_rate = city_cases_by_week$cases_per_week / yuc_pop$POBTOT[1])
+    case_rate = city_cases_by_week$cases_per_week / sum(merida_pop$POBTOT))
   
   for (s in 1:num_sims) {
-    # infected population
     infected_pop <- infect_pop(trial_pop, gen_prob, initially_infected, 
                                alpha = alpha, beta = beta, gamma = gamma, r = r)
-    # save this population
-    name <- paste0("blockRe", format((n_per_block - 1) * (1 - exp(-alpha))), 
-                     "_clusterRe", format((n_per_cluster - n_per_block) * 
-                                            (1 - exp(-beta))),
-                     "_gamma", format(gamma),
-                   "_sim", s)
-    outfile <- file.path(here::here("output", "sim_results", "populations"), 
-                         paste0(name, ".csv"))
-    write.csv(infected_pop, file = outfile)
     
-    # inference
     # epidemic curve
     ## average incidence across simulations
     incidence <- infected_pop %>% 
@@ -332,6 +329,25 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
                          data = reported_by_cluster)
     reported_pois[s] <- 1 - exp(coef(pois_reported)["TIRS"])
     
+    # Poisson regression (no offset, community effect) - all infections
+    community_group <- infected_pop[infected_pop$TIRS_cohort == 0,]
+    comm_cases_by_cluster <- community_group %>% 
+      group_by(Cluster, TIRS) %>% 
+      summarize(num_cases = sum(infected), .groups = "drop")
+    
+    pois_fit_comm <- glm(num_cases ~ TIRS, family = poisson(link = "log"), 
+                         data = comm_cases_by_cluster)
+    pois_community[s] <- 1 - exp(coef(pois_fit_comm)["TIRS"])
+    
+    # Poisson regression (no offset, community effect) - REPORTED efficacy
+    comm_reported_by_cluster <- community_group %>% 
+      group_by(Cluster, TIRS) %>% 
+      summarize(reported_cases = sum(reported), .groups = "drop")
+    
+    pois_reported_comm <- glm(reported_cases ~ TIRS, family = poisson(link = "log"),
+                              data = comm_reported_by_cluster)
+    pois_community_r[s] <- 1 - exp(coef(pois_reported_comm)["TIRS"])
+    
     # Poisson regression (offset by population) - true efficacy
     cases_pop_by_cluster <- cbind(cases_by_cluster, 
                                   n_per_cluster = rep(n_per_cluster, 
@@ -377,6 +393,29 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
                           data = reported_dat)
     reported_cox[s] <- 1 - exp(coef(cox_reported))
     
+    # Cox model for the all TIRS trial kids
+    # first remove index cases
+    tirs_dat <- infected_pop[infected_pop$index_case != 1,]
+    # now only TIRS population
+    tirs_dat <- tirs_dat[tirs_dat$TIRS_cohort == 1,]
+    tirs_dat$exit_time <- ifelse(is.na(tirs_dat$tau), trial_end, tirs_dat$tau)
+    cox_tirsfit <- coxph(Surv(rep(26, nrow(tirs_dat)),
+                              exit_time, infected) ~ TIRS + cluster(Cluster),
+                         data = tirs_dat)
+    cox_tirs[s] <- 1 - exp(coef(cox_tirsfit))    
+    
+    # Cox model for the reported TIRS trial kids, just like in paper
+    # first remove index cases
+    tirs_dat_r <- infected_pop[infected_pop$index_case != 1,]
+    # now only TIRS population
+    tirs_dat_r <- tirs_dat_r[tirs_dat_r$TIRS_cohort == 1,]
+    tirs_dat_r$exit_time <- ifelse(tirs_dat_r$reported == 1, 
+                                   tirs_dat_r$tau, trial_end)
+    cox_tirsfit_r <- coxph(Surv(rep(26, nrow(tirs_dat_r)),
+                                exit_time, reported) ~ TIRS + cluster(Cluster),
+                           data = tirs_dat_r)
+    cox_tirs_r[s] <- 1 - exp(coef(cox_tirsfit_r))    
+    
     # infector source: num infected per source / total pop infected
     source_community[s] <- sum(infected_pop$source == 0, na.rm = TRUE) / 
       sum(infected_pop$infected)
@@ -416,6 +455,11 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
   avg_pois_reported_est <- mean(reported_pois, na.rm = TRUE)
   avg_cox_reported_est <- mean(reported_cox, na.rm = TRUE)
   
+  avg_pois_comm <- mean(pois_community, na.rm = TRUE)
+  avg_pois_comm_r <- mean(pois_community_r, na.rm = TRUE)
+  avg_cox_tirs <- mean(cox_tirs, na.rm = TRUE)
+  avg_cox_tirs_r <- mean(cox_tirs_r, na.rm = TRUE)
+  
   # avg proportion of infector sources
   avg_infected_within_block <- mean(source_block, na.rm = TRUE)
   avg_infected_within_cluster <- mean(source_cluster, na.rm = TRUE)
@@ -437,6 +481,10 @@ run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha,
               avg_pois_pt_estimate = avg_pois_pt_estimate,
               avg_cox_estimate = avg_cox_estimate,
               avg_cox_reported_est = avg_cox_reported_est,
+              avg_pois_comm = avg_pois_comm,
+              avg_pois_comm_r = avg_pois_comm_r,
+              avg_cox_tirs = avg_cox_tirs,
+              avg_cox_tirs_r = avg_cox_tirs_r,
               avg_infected_within_block = avg_infected_within_block,
               avg_infected_within_cluster = avg_infected_within_cluster,
               avg_infected_from_community = avg_infected_from_community))
