@@ -1,0 +1,164 @@
+---
+title: "Model_Changes"
+author: "Evelyn Shi"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+library(sf)
+library(here)
+library(tidyverse)
+library(rio)
+library(ggplot2)
+library(gridExtra)
+```
+
+# Data
+Read in data
+```{r}
+# ## Population of Mérida + Kanasín (old)
+yuc_pop <- read.csv("data/SINAVE_Data/RESAGEBURB2020 - 31 Yucatán.csv")
+
+merida_pop <- read.csv("data/yuc_pop/yuc_pop_all.csv") %>% # all of yucatan
+  filter(MUN == 50 | MUN == 41 | MUN == 101) # only metro merida
+
+## Mérida + Kanasín shapefile from INEGI (eem - Block Polygons)
+merida_block_sf <- st_read(dsn = here("31_yucatan_2020/conjunto_de_datos"),
+                    layer = "31m")
+merida_block_sf <- merida_block_sf %>% 
+  filter(CVE_MUN == "041" | CVE_MUN == "050" | CVE_MUN == "100")
+
+## Mérida + Kanasín shapefile from INEGI (eea - Basic Urban Geostatistical Areas)
+merida_cluster_sf <- st_read(dsn = here("31_yucatan_2020/conjunto_de_datos"),
+                    layer = "31a")
+merida_cluster_sf <- merida_cluster_sf %>% 
+  filter(CVE_MUN == "041" | CVE_MUN == "050")
+
+## SINAVE case data
+sinave_all_cases <- here::here("data", "SINAVE_Data", 
+                       "datos_abiertos_dengue_061223.csv") %>%
+  rio::import() %>% 
+  dplyr::as_tibble()
+
+## Cases Shapefile
+cases_sf <- st_read(dsn = here("data"), 
+                 layer = "TIRS_SINAVE_22_23")
+
+## Cases by TIRS block (not a shapefile, will add this info onto the shapefile)
+cases_tirs_info <- read_csv("data/TIRS_SINAVE_combined22_23_blockID.csv")
+
+
+## TIRS Clusters Shapefile
+clusters_sf <- st_read(dsn = here("data"),
+                    layer = "Cluster final 2021 actualizado")
+
+## entomological data
+ento <- here::here("data", "TIRS_database_entom_summ.csv") %>%
+  rio::import() %>% 
+  dplyr::as_tibble()
+
+# make sure all sf files have the same coordinates 
+merida_cluster_sf <- st_transform(merida_cluster_sf, st_crs(merida_block_sf))
+cases_sf <- st_transform(cases_sf, st_crs(merida_block_sf))
+clusters_sf <- st_transform(clusters_sf, st_crs(merida_block_sf))
+```
+
+Formatting the data for the model
+```{r}
+all <- cases_tirs_info %>% 
+  #head(7) %>% 
+  mutate(id = 1:833,
+         block_id = ifelse(is.na(MZTIRS), CVE_MZA, MZTIRS),
+         cluster_id = CLUSTER,
+         week_onset = Week_onset) %>% 
+  dplyr::select(id, block_id, cluster_id, Week_onset, week_onset)
+v <- c(rep(-1, 9), rep(-1, 3), 1)
+neg_vax <- as.data.frame(matrix(v, nrow = 833, ncol = length(v), byrow = TRUE))
+all <- cbind(all, neg_vax)
+all <- all %>% 
+  mutate(vax_date = week_onset - 1) %>% 
+  dplyr::select(id, block_id, cluster_id, Week_onset, week_onset, 
+                V1, V2, V3, V4, V5, V6, V7, V8, V9, vax_date, 
+                V11, V12, V13)
+write.table(all, file = "all.txt", sep = " ", row.names = FALSE,
+            col.names = FALSE)
+
+inf_time <- all$Week_onset
+inf_times <- matrix(inf_time, nrow = 100, ncol = length(inf_time), 
+                    byrow = TRUE)
+write.table(inf_times, file = "inf_times.txt", sep = " ", row.names = FALSE,
+            col.names = FALSE)
+
+# attendance
+house_attend <- c(0, 0, 1, 0, 0, 1, 1)
+house_attend <- matrix(house_attend, nrow = 7, ncol = 52)
+write.table(house_attend, file = "house_attend.txt", sep = " ", row.names = FALSE,
+            col.names = FALSE)
+
+attend_school <- c(1, 1, 0, 1, 1, 1, 1)
+attend_school <- matrix(attend_school, nrow = 7, ncol = 52)
+write.table(attend_school, file = "attend_school.txt", sep = " ", row.names = FALSE,
+            col.names = FALSE)
+
+attend_comm <- c(1, 1, 0, 1, 1, 0, 1)
+attend_comm <- matrix(attend_comm, nrow = 833, ncol = 52)
+write.table(attend_comm, file = "attend_comm.txt", sep = " ", row.names = FALSE,
+            col.names = FALSE)
+
+attend_hyponeg <- matrix(1, nrow = 50, ncol = 52)
+write.table(attend_hyponeg, file = "attend_hyponeg.txt", sep = " ",
+            row.names = FALSE, col.names = FALSE)
+```
+
+# Changes
+- don't need infection times
+- don't need negatives
+- include beta as another parameter !!
+
+# Output
+1) output of mcmc chains
+
+2) reconstruction of infector-infectee pairs
+
+# Graphs
+## MCMC chains
+```{r}
+here()
+mcmc_chains <- read.table(
+  here("model_output", "mcmc_chains", "mcmc.alpha-s1.txt"), 
+  sep=" ", 
+  header = TRUE)
+mcmc_chains <- mcmc_chains %>% 
+  mutate(iter = row_number())
+mcmc_long <- mcmc_chains %>% 
+  pivot_longer(cols = c(alpha, gamma, Gta, Gtb, nSim, logL, nAccept),
+               names_to = "fitted_var",
+               values_to = "value") 
+
+plot_trace_density <- function(variable, colour = "#2C3E50") {
+  trace <- ggplot(filter(mcmc_long, fitted_var == variable),
+                  aes(x = iter, y = value)) +
+    geom_line(colour = colour, alpha = 0.6) +
+    theme_minimal() +
+    labs(title = variable,
+         x = NULL,
+         y = NULL) +
+    theme(legend.position = "none",
+          plot.title = element_text(hjust = 0.5))
+
+  dens <- ggplot(filter(mcmc_long, fitted_var == variable),
+                 aes(x = value)) +
+    geom_density(fill = colour, alpha = 0.25, colour = "NA") +
+    theme_minimal() +
+    labs(y = NULL,
+         x = NULL) +
+    theme(legend.position = "none",
+          plot.title = element_text(hjust = 0.5))
+
+  grid.arrange(trace, dens, nrow = 2, heights = c(2, 1))
+}
+
+plot_trace_density("alpha")
+```
+

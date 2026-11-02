@@ -408,12 +408,12 @@ Gmu <- 2; Gs2 <- 1; max_gen_time <- 90 # 17 days?; 2 days?
 gen_prob <- gen_time(Gmu, Gs2, max_gen_time)
 
 # Population size
-n_clusters <- 10; n_per_cluster <- 500; n_per_block <- 50
+n_clusters <- 50; n_per_cluster <- 2500; n_per_block <- 250
 trial_pop <- sim_pop(n_clusters, n_per_cluster, n_per_block)
 
 ## parameters to test #############################################################
-param_grid <- expand.grid(block_R0   = c(1.6, 1.9, 2.2, 2.5), 
-                          cluster_R0 = c(1.6, 1.9, 2.2, 2.5), 
+param_grid <- expand.grid(block_R0   = c(0.25, 0.5, 0.7, 1, 1.3, 1.6), 
+                          cluster_R0 = c(0.25, 0.5, 0.7, 1, 1.3, 1.6), 
                           gamma = c(0.5, 1, 2)) %>%
   filter(block_R0 >= cluster_R0) %>%
   mutate(alpha = -log((block_R0 + 1 - n_per_block) / (1 - n_per_block)), 
@@ -451,4 +451,4 @@ for (p in 1:nrow(param_grid)) {
 }
 
 test_sim_25 <- bind_rows(grid_results)
-saveRDS(test_sim_25, file = "output/sim_results/param_grid_search/test_sim_25.rds")
+saveRDS(test_sim_25, file = "output/param_grid_search/test_sim_25.rds")

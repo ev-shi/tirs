@@ -9,3 +9,10 @@
 *.shx
 *.prj
 .positai
+model_output/mcmc_chains/mcmc.alpha-s1.txt
+sim_results/populations*
+sim_results/scenarios_weights*
+sim_results/scenarios*
+sim_results/parameter_testing*
+sim_results/param_grid_search*
+*.png

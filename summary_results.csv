@@ -1,0 +1,2 @@
+block,cluster,gamma,cox_mean,cox_lwr_mean,cox_upr_mean,cox_median,cox_bias,cox_count,cox_ci_cntns_tru,prop_cox_yes,pois_mean,pois_lwr_mean,pois_upr_mean,pois_median,pois_bias,pois_count,pois_ci_cntns_tru,prop_pois_yes
+0.3,0.3,1,-0.34164902209941306,-4.389810749965488,0.644128622702826,-0.1491672640457513,-0.38064902209941304,98,97,0.9897959183673469,-0.026266431352973532,-0.7543063072509987,0.39754811384142297,0.034482758601333596,-0.06526643135297353,100,95,0.95

@@ -14,7 +14,79 @@ library(sf) # for shapefiles
 library(lubridate) # to work with dates
 ```
 
-# Raw Data
+# Simulated Data
+```{r}
+sim_pop <- here::here("sim_pops", "blockRe0p60_clusterRe0p50_gamma2p00_sim1.csv") %>%
+  rio::import() %>% 
+  dplyr::as_tibble()
+```
+
+```{r}
+sim_cases <- sim_pop %>% 
+  filter(infected == 1)
+```
+
+
+## Cleaning
+### all cases
+```{r}
+infected <- sim_cases %>% 
+  mutate(symptom_onset = tau - round(runif(1, 3, 10), 0)) %>% 
+  select(ID, Cluster, cluster_block, TIRS, symptom_onset)
+```
+write to txt file
+```{r}
+write.table(infected, file = "infected.txt", sep = " ", row.names = FALSE,
+            col.names = FALSE)
+```
+1248 infected people only
+
+ok wow i cannot do this many people it would take way too long
+i'll try with....100? 200?
+```{r}
+sample <- sample(infected$ID, 100)
+hundred_pos <- infected %>% 
+  filter(ID %in% sample)
+```
+write to txt file
+```{r}
+write.table(hundred_pos, file = "hundred.txt", sep = " ", row.names = FALSE,
+            col.names = FALSE)
+```
+
+
+### reported cases only:
+```{r}
+sim_reported <- sim_pop %>% 
+  filter(reported == 1)
+```
+
+Match c.positives.alpha.txt: 
+IDperson
+IDblock
+IDcluster
+TIRS
+symptom_onset
+```{r}
+positives <- sim_cases %>% 
+  mutate(symptom_onset = tau - round(runif(1, 3, 10), 0)) %>% 
+  select(ID, Cluster, cluster_block, TIRS, symptom_onset)
+```
+
+uhhh just try with a small subset
+```{r}
+sample <- sample(positives$ID, 10)
+ten_pos <- positives %>% 
+  filter(ID %in% sample)
+```
+
+write to txt file
+```{r}
+write.table(positives, file = "positives.txt", sep = " ", row.names = FALSE,
+            col.names = FALSE)
+```
+
+# Real Data
 import data:
 ```{r}
 ## cases
@@ -23,7 +95,7 @@ suspected <- here::here("data", "TIRS_SINAVE_combined22_23_blockID.csv") %>%
   dplyr::as_tibble()
 ```
 
-# Cleaning
+## Cleaning
 ```{r}
 # Cases only (no negative diagnoses)
 cases <- suspected %>% 
@@ -51,13 +123,40 @@ positives <- cases %>%
 
 ```
 
-global.mcmc.txt
+# MCMC Results
+Read in results
 ```{r}
-#Nindiv, Nnegs, Nclusters, NDAYS, DAY0, DAYL, SUSCEPTIBILITY_XI1, XI2, W
-#TRANSMISSIBILITY_RHO, MAX_GENTIME, sigma_alpha, beta, gamma, Gta, Gtb
-global.mcmc.txt <- c(
-  as.numeric(nrow(positives)), #Nindiv
-  0                            #Nnegs -- don't need in final model 
-)
+chain1 <- here::here("tirs_model", "output", "mcmc.50000.txt") %>%
+  rio::import() %>% 
+  dplyr::as_tibble()
+chain2 <- here::here("tirs_model", "output", "mcmc.50000.txt") %>%
+  rio::import() %>% 
+  dplyr::as_tibble()
+chain3 <- here::here("tirs_model", "output", "mcmc.50000.txt") %>%
+  rio::import() %>% 
+  dplyr::as_tibble()
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

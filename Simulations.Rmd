@@ -113,10 +113,19 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
   adult_ids <- which(trial_pop$Age >= 18)
   immune_adults <- sample(adult_ids, size = round(0.3 * length(adult_ids)))
   trial_pop$susceptible[immune_adults] <- 0
+    # 70% of adults are susceptible
   
   kid_ids <- which(trial_pop$Age < 18) 
-  immune_kids <- sample(kid_ids, size = round(0.3 * length(kid_ids)))
+  immune_kids <- sample(kid_ids, size = round(0 * length(kid_ids)))
   trial_pop$susceptible[immune_kids] <- 0
+    # 100% of kids are susceptible
+  
+  # time spent in the area
+  trial_pop$block_weight <- ifelse(trial_pop$Age < 18,
+                                          0.25, 0.4)
+  trial_pop$cluster_weight <- ifelse(trial_pop$Age < 18,
+                                     0.15, 0.3)
+      # kids spend 40% of time in block/cluster, adults 70%
   
   # tracking infectors
   susceptible_ids <- which(trial_pop$susceptible == 1)
@@ -146,7 +155,7 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
           dt <- t - trial_pop$tau[i]
           if (dt <= max_gen_time){ 
             if (trial_pop$TIRS[j] == 1) {
-              lambda_jb <- lambda_jb + r * alpha * gen_prob[dt]
+              lambda_jb <- lambda_jb + (1 - r) * alpha * gen_prob[dt]
               # treatment reduction * hazard from i infecting j * prob that gen time is dt
             } else {
               lambda_jb <- lambda_jb + alpha * gen_prob[dt]
@@ -165,7 +174,7 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
           dt <- t - trial_pop$tau[i]
           if (dt <= max_gen_time){ 
             if (trial_pop$TIRS[j] == 1) {
-              lambda_jc <- lambda_jc + r * beta * gen_prob[dt]
+              lambda_jc <- lambda_jc + (1 - r) * beta * gen_prob[dt]
             } else {
               lambda_jc <- lambda_jc + beta * gen_prob[dt]
               # hazard from i infecting j * prob that gen time is dt
@@ -179,9 +188,15 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
         dt <- t - z
         if (dt <= max_gen_time) {
           lambda_jm <- lambda_jm + gamma * (I_m[z] / sum(merida_pop$POBTOT)) * gen_prob[dt]
-          # hazard from a case in merid * cases rate in merida * prob gen time is dt
+          # hazard from a case in merida * cases rate in merida * prob gen time is dt
         }
       }
+      
+      # how long do they typically spend in the neighborhood?
+      lambda_jb <- lambda_jb * trial_pop$block_weight[j]
+      lambda_jc <- lambda_jc * trial_pop$cluster_weight[j]
+      lambda_jm <- lambda_jm * (1 - (trial_pop$block_weight[j] + 
+                                       trial_pop$cluster_weight[j]))
       
       # total FOI on j
       lambda_j <- lambda_jb + lambda_jc + lambda_jm
@@ -192,29 +207,30 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
       # j becomes a new infection
       if (runif(1) < p_j) {
         # possible infectors of j
+        
         sources <- c(same_block, diff_block, 0)
         weights <- c(sapply(same_block, function(i) {
-          if (trial_pop$infected[i] == 1) {
-            dt <- t - trial_pop$tau[i]
-            if (dt <= max_gen_time){ 
-              base <- alpha * gen_prob[dt]
-              # hazard from i infecting j * prob that gen time is dt
-              if (trial_pop$TIRS[i] == 1) { base <- r * base }
-              return(base)
+            if (trial_pop$infected[i] == 1) {
+              dt <- t - trial_pop$tau[i]
+              if (dt <= max_gen_time){ 
+                base <- alpha * gen_prob[dt]
+                # hazard from i infecting j * prob that gen time is dt
+                if (trial_pop$TIRS[i] == 1) { base <- (1 - r) * base }
+                return(base)
+              }
             }
-          }
-          return(0)
-        }), sapply(diff_block, function(i){
-          if (trial_pop$infected[i] == 1) {
-            dt <- t - trial_pop$tau[i]
-            if (dt <= max_gen_time){ 
-              base <- beta * gen_prob[dt]
-              if (trial_pop$TIRS[i] == 1) { base <- base * r }
-              return(base)
+            return(0)
+          }), sapply(diff_block, function(i){
+            if (trial_pop$infected[i] == 1) {
+              dt <- t - trial_pop$tau[i]
+              if (dt <= max_gen_time){ 
+                base <- beta * gen_prob[dt]
+                if (trial_pop$TIRS[i] == 1) { base <- base * (1 - r) }
+                return(base)
+              }
             }
-          }
-          return(0)
-        }), lambda_jm)
+            return(0)
+          }), lambda_jm)
         
         # pick infector
         if (sum(weights) > 0) {
@@ -256,7 +272,7 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
   infected_TIRS_ids <- which(trial_pop$infected == 1 & 
                                trial_pop$TIRS_cohort == 1)
   reported_tirs_ids <- sample(infected_TIRS_ids, 
-                              size = round(0.8 * length(infected_TIRS_ids)))
+                              size = round(0.6 * length(infected_TIRS_ids)))
   infected_sinave_ids <- which(trial_pop$infected == 1 & 
                                  trial_pop$TIRS_cohort == 0)
   reported_sinave_ids <- sample(infected_sinave_ids, 
@@ -273,288 +289,20 @@ infect_pop <- function(trial_pop, gen_prob, initially_infected = 1,
 run_sims <- function(num_sims, trial_pop, gen_prob, initially_infected, alpha, 
                      beta, gamma, r) {
   
-  sim_list <- list()
-  offspring_index_control <- c()
-  offspring_index_tirs <- c()
-  rr_peak <- c()
-  time_diff_at_peaks <- c()
-  control_list <- list()
-  tirs_list <- list()
-  prop_infected <- c()
-  prop_infected_sus <- c()
-  control_infected <- c()
-  tirs_infected <- c()
-  pois_efficacy <- c()
-  reported_pois <- c()
-  pois_popoff_eff <- c()
-  pois_ptoff_eff <- c()
-  cox_efficacy <- c()
-  reported_cox <- c()
-  source_community <- c()
-  source_block <- c()
-  source_cluster <- c()
-  cox_tirs <- c()
-  cox_tirs_r <- c()
-  pois_community <- c()
-  pois_community_r <- c()
-  
-  real_df <- data.frame(
-    time = 1:trial_end,
-    case_rate = city_cases_by_week$cases_per_week / sum(merida_pop$POBTOT))
-  
   for (s in 1:num_sims) {
     infected_pop <- infect_pop(trial_pop, gen_prob, initially_infected, 
                                alpha = alpha, beta = beta, gamma = gamma, r = r)
     
-    # epidemic curve
-    ## average incidence across simulations
-    incidence <- infected_pop %>% 
-      filter(is.finite(tau)) %>% 
-      count(tau, name = "cases") %>% 
-      complete(tau = trial_start:trial_end, fill = list(cases = 0)) %>%
-      rename(time = tau) %>% 
-      mutate(case_rate = cases / (n_clusters*n_per_cluster),
-             sim = s)
-    
-    sim_list[[s]] <- incidence
-    
-    ## by trial arm
-    control <- infected_pop %>% 
-      filter(is.finite(tau)) %>% 
-      filter(TIRS == 0) %>% 
-      count(tau, name = "cases") %>% 
-      complete(tau = trial_start:trial_end, fill = list(cases = 0)) %>%
-      rename(time = tau) %>% 
-      mutate(sim = s)
-    control_list[[s]] <- control
-    
-    tirs <- infected_pop %>% 
-      filter(is.finite(tau)) %>% 
-      filter(TIRS == 1) %>% 
-      count(tau, name = "cases") %>% 
-      complete(tau = trial_start:trial_end, fill = list(cases = 0)) %>%
-      rename(time = tau) %>% 
-      mutate(sim = s)
-    tirs_list[[s]] <- tirs
-    
-    # count offspring
-    index_cases <- infected_pop %>%
-    filter(index_case == 1) %>%
-    mutate(
-      offspring = sapply(ID, function(id) {
-        sum(infected_pop$infector == id, na.rm = TRUE)
-      })
-    ) %>%
-    group_by(TIRS) %>%
-    summarize(mean_offspring = mean(offspring), .groups = "drop")
-    
-    offspring_index_control[s] <- ifelse(
-      any(index_cases$TIRS == 0),
-      index_cases$mean_offspring[index_cases$TIRS == 0],
-      NA
-    )
-    
-    offspring_index_tirs[s] <- ifelse(
-      any(index_cases$TIRS == 1),
-      index_cases$mean_offspring[index_cases$TIRS == 1],
-      NA
-    )
-    
-    # find peak incidence in simulation
-    study_peak <- max(incidence$case_rate)
-    real_peak <- max(real_df$case_rate)
-    
-    rr_peak[s] <- study_peak / real_peak # difference in magnitude
-    time_diff_at_peaks[s] <- incidence$time[which.max(incidence$case_rate)] - 
-      real_df$time[which.max(real_df$case_rate)]
-    
-    # proportion of population infected at end of season
-    prop_infected[s] <- sum(incidence$cases) / (n_clusters*n_per_cluster)
-    
-    # proportion of population infected at end of season out of susceptible pop
-    prop_infected_sus[s] <- sum(incidence$cases) / sum(infected_pop$susceptible)
-    
-    # num infected by trial arm
-    control_infected[s] <- sum(control$cases)
-    tirs_infected[s] <- sum(tirs$cases)
-    
-    # Poisson regression (no offset) - true efficacy
-    cases_by_cluster <- infected_pop %>% 
-      group_by(Cluster, TIRS) %>% 
-      summarize(num_cases = sum(infected), .groups = "drop")
-    
-    pois_fit <- glm(num_cases ~ TIRS, family = poisson(link = "log"), 
-                data = cases_by_cluster)
-    pois_efficacy[s] <- 1 - exp(coef(pois_fit)["TIRS"])
-    
-    # Poisson regression (no offset) - REPORTED efficacy
-    reported_by_cluster <- infected_pop %>% 
-      group_by(Cluster, TIRS) %>% 
-      summarize(reported_cases = sum(reported), .groups = "drop")
-    
-    pois_reported <- glm(reported_cases ~ TIRS, family = poisson(link = "log"),
-                         data = reported_by_cluster)
-    reported_pois[s] <- 1 - exp(coef(pois_reported)["TIRS"])
-    
-    # Poisson regression (no offset, community effect) - all infections
-    community_group <- infected_pop[infected_pop$TIRS_cohort == 0]
-    comm_cases_by_cluster <- community_group %>% 
-      group_by(Cluster, TIRS) %>% 
-      summarize(num_cases = sum(infected), .groups = "drop")
-    
-    pois_fit_comm <- glm(num_cases ~ TIRS, family = poisson(link = "log"), 
-                data = comm_cases_by_cluster)
-    pois_community[s] <- 1 - exp(coef(pois_fit_comm)["TIRS"])
-    
-    # Poisson regression (no offset, community effect) - REPORTED efficacy
-    comm_reported_by_cluster <- community_group %>% 
-      group_by(Cluster, TIRS) %>% 
-      summarize(reported_cases = sum(reported), .groups = "drop")
-    
-    pois_reported_comm <- glm(reported_cases ~ TIRS, family = poisson(link = "log"),
-                         data = comm_reported_by_cluster)
-    pois_community_r[s] <- 1 - exp(coef(pois_reported_comm)["TIRS"])
-    
-    # Poisson regression (offset by population) - true efficacy
-    cases_pop_by_cluster <- cbind(cases_by_cluster, 
-                                  n_per_cluster = rep(n_per_cluster, 
-                                                        nrow(cases_by_cluster)))
-    
-    pois_ofit_pop <- glm(num_cases ~ TIRS + offset(log(n_per_cluster)), 
-                         family = poisson(link = "log"), 
-                         data = cases_pop_by_cluster)
-    pois_popoff_eff[s] <- 1 - exp(coef(pois_ofit_pop)["TIRS"])
-    
-    # Poisson regression (offset by person-time?) - true efficacy
-    infected_pop$person_time <- ifelse(infected_pop$infected == 1, 
-                                       infected_pop$tau, trial_end)
-    cases_per_cluster_pt <- infected_pop %>% 
-      group_by(Cluster, TIRS) %>% 
-      summarize(num_cases = sum(infected),
-                person_time = sum(person_time),
-                .groups = "drop")
-    
-    pois_ofit_pt <- glm(num_cases ~ TIRS + offset(log(person_time)), 
-                        family = poisson(link = "log"), 
-                        data = cases_per_cluster_pt)
-    pois_ptoff_eff[s] <- 1 - exp(coef(pois_ofit_pt)["TIRS"])
-    
-    # Cox model (as done in paper) - true efficacy
-        # first remove index case
-    cox_dat <- infected_pop[infected_pop$index_case != 1,]
-        # itt.cox <- coxph(Surv(entry, exit, Pos_All) ~ arm + cluster(cluster),
-        #                   data = data)
-    cox_dat$exit_time <- ifelse(is.na(cox_dat$tau), trial_end, cox_dat$tau)
-    cox_fit <- coxph(Surv(rep(26, nrow(cox_dat)), 
-                                  exit_time, infected) ~ TIRS + cluster(Cluster),
-                             data = cox_dat)
-    cox_efficacy[s] <- 1 - exp(coef(cox_fit))
-    
-    # Cox model, using only reported cases
-        # first remove index cases
-    reported_dat <- infected_pop[infected_pop$index_case != 1,]
-    reported_dat$exit_time <- ifelse(reported_dat$reported == 1, 
-                                     reported_dat$tau, trial_end)
-    cox_reported <- coxph(Surv(rep(26, nrow(reported_dat)),
-                               exit_time, reported) ~ TIRS + cluster(Cluster),
-                          data = reported_dat)
-    reported_cox[s] <- 1 - exp(coef(cox_reported))
-    
-    # Cox model for the all TIRS trial kids
-        # first remove index cases
-    tirs_dat <- infected_pop[infected_pop$index_case != 1,]
-        # now only TIRS population
-    tirs_dat <- tirs_dat[tirs_dat$TIRS_cohort == 1,]
-    tirs_dat$exit_time <- ifelse(is.na(tirs_dat$tau), trial_end, tirs_dat$tau)
-    cox_tirsfit <- coxph(Surv(rep(26, nrow(tirs_dat)),
-                               exit_time, infected) ~ TIRS + cluster(Cluster),
-                          data = tirs_dat)
-    cox_tirs[s] <- 1 - exp(coef(cox_tirsfit))    
-    
-    # Cox model for the reported TIRS trial kids, just like in paper
-        # first remove index cases
-    tirs_dat_r <- infected_pop[infected_pop$index_case != 1,]
-        # now only TIRS population
-    tirs_dat_r <- tirs_dat_r[tirs_dat_r$TIRS_cohort == 1,]
-    tirs_dat_r$exit_time <- ifelse(tirs_dat_r$reported == 1, 
-                                     tirs_dat_r$tau, trial_end)
-    cox_tirsfit_r <- coxph(Surv(rep(26, nrow(tirs_dat_r)),
-                               exit_time, reported) ~ TIRS + cluster(Cluster),
-                          data = tirs_dat_r)
-    cox_tirs_r[s] <- 1 - exp(coef(cox_tirsfit_r))    
-    
-    # infector source: num infected per source / total pop infected
-    source_community[s] <- sum(infected_pop$source == 0, na.rm = TRUE) / 
-      sum(infected_pop$infected)
-    source_block[s] <- sum(infected_pop$source == 1, na.rm = TRUE) / 
-      sum(infected_pop$infected)
-    source_cluster[s] <- sum(infected_pop$source == 2, na.rm = TRUE) / 
-      sum(infected_pop$infected)
+    # save this population
+    name <- paste0("blockRe", format((n_per_block - 1) * (1 - exp(-alpha))),
+                   "_clusterRe", format((n_per_cluster - n_per_block) * 
+                                          (1 - exp(-beta))),
+                   "_gamma", format(gamma),
+                   "_sim", s)
+    outfile <- file.path(here::here("output", "sim_results", "populations"),
+                         paste0(name, ".csv"))
+    write.csv(infected_pop, file = outfile)
   }
-  
-  # R_0
-  avg_offspring_c <- mean(offspring_index_control, na.rm = TRUE)
-  var_offspring_c <- var(offspring_index_control, na.rm = TRUE)
-  
-  avg_offspring_t <- mean(offspring_index_tirs, na.rm = TRUE)
-  var_offspring_t <- var(offspring_index_tirs, na.rm = TRUE)
-  
-  # rate ratio between study population and merida
-  avg_rr_peak <- mean(rr_peak, na.rm = TRUE)
-  var_rr_peak <- var(rr_peak, na.rm = TRUE)
-  avg_time_diff <- mean(time_diff_at_peaks, na.rm = TRUE)
-  
-  # proportion of population infected
-  avg_prop_infected <- mean(prop_infected, na.rm = TRUE)
-  # proportion of susceptibles infected
-  avg_prop_inf_sus <- mean(prop_infected_sus, na.rm = TRUE)
-  
-  # avg infected by trial arm
-  avg_control_infected <- mean(control_infected, na.rm = TRUE)
-  avg_tirs_infected <- mean(tirs_infected, na.rm = TRUE)
-  
-  # avg efficacy estimates
-  avg_pois_estimate <- mean(pois_efficacy, na.rm = TRUE)
-  avg_pois_pop_estimate <- mean(pois_popoff_eff, na.rm = TRUE)
-  avg_pois_pt_estimate <- mean(pois_ptoff_eff, na.rm = TRUE)
-  avg_cox_estimate <- mean(cox_efficacy, na.rm = TRUE)
-  
-  avg_pois_reported_est <- mean(reported_pois, na.rm = TRUE)
-  avg_cox_reported_est <- mean(reported_cox, na.rm = TRUE)
-  
-  avg_pois_comm <- mean(pois_community, na.rm = TRUE)
-  avg_pois_comm_r <- mean(pois_community_r, na.rm = TRUE)
-  avg_cox_tirs <- mean(cox_tirs, na.rm = TRUE)
-  avg_cox_tirs_r <- mean(cox_tirs_r, na.rm = TRUE)
-  
-  # avg proportion of infector sources
-  avg_infected_within_block <- mean(source_block, na.rm = TRUE)
-  avg_infected_within_cluster <- mean(source_cluster, na.rm = TRUE)
-  avg_infected_from_community <- mean(source_community, na.rm = TRUE)
-  
-  return(list(avg_offspring_c = avg_offspring_c, 
-              var_offspring_c = var_offspring_c,
-              avg_offspring_t = avg_offspring_t, 
-              var_offspring_t = var_offspring_t,
-              avg_rr_peak = avg_rr_peak, var_rr_peak = var_rr_peak,
-              avg_time_diff = avg_time_diff, 
-              avg_prop_infected = avg_prop_infected,
-              avg_prop_inf_sus = avg_prop_inf_sus,
-              avg_control_infected = avg_control_infected,
-              avg_tirs_infected = avg_tirs_infected,
-              avg_pois_estimate = avg_pois_estimate,
-              avg_pois_reported_est = avg_pois_reported_est,
-              avg_pois_pop_estimate = avg_pois_pop_estimate,
-              avg_pois_pt_estimate = avg_pois_pt_estimate,
-              avg_cox_estimate = avg_cox_estimate,
-              avg_cox_reported_est = avg_cox_reported_est,
-              avg_pois_comm = avg_pois_comm,
-              avg_pois_comm_r = avg_pois_comm_r,
-              avg_cox_tirs = avg_cox_tirs,
-              avg_cox_tirs_r = avg_cox_tirs_r,
-              avg_infected_within_block = avg_infected_within_block,
-              avg_infected_within_cluster = avg_infected_within_cluster,
-              avg_infected_from_community = avg_infected_from_community))
 }
 ```
 
@@ -581,78 +329,65 @@ trial_pop <- sim_pop(n_clusters, n_per_cluster, n_per_block)
 Infect population
 ```{r}
 infected_pop <- infect_pop(trial_pop, gen_prob, 5, 
-                       alpha = -log((1.5 + 1 - n_per_block) 
+                       alpha = -log((0.5 + 1 - n_per_block) 
                                     / (1 - n_per_block)), 
-                       beta  = -log((1.5 - n_per_cluster + n_per_block)
+                       beta  = -log((0.4 - n_per_cluster + n_per_block)
                                     / (n_per_block - n_per_cluster)),
-                       gamma = 2, r = 0.5)
+                       gamma = 1, r = 0.039)
+
+infected_populations <- read_csv("sim_results/fixed_alpha_beta_05_04/no_weights/blockRe0.9000_clusterRe0.9000_gamma0.0000_run001.csv")
 ```
 
-Run simulations
+how many cases per arm?
 ```{r}
-sim_out <- run_sims(5, trial_pop, gen_prob, 5, 
-                       alpha = -log((1.5 + 1 - n_per_block) 
-                                    / (1 - n_per_block)), 
-                       beta  = -log((1.5 - n_per_cluster + n_per_block)
-                                    / (n_per_block - n_per_cluster)),
-                       gamma = 2, r = 0.5)
+infected_pop %>% 
+  group_by(TIRS) %>% 
+  summarize(true_cases = sum(infected),
+            reported_cases = sum(reported))
 ```
 
-Parameter grid
+how many reported cases 
 ```{r}
-param_grid <- expand.grid(block_R0   = c(1.6, 1.9, 2.2, 2.5), 
-                          cluster_R0 = c(1.6, 1.9, 2.2, 2.5), 
-                          gamma = c(0.5, 1, 2)) %>%
-  filter(block_R0 >= cluster_R0) %>%
-  mutate(alpha = -log((block_R0 + 1 - n_per_block) / (1 - n_per_block)), 
-         beta  = -log((cluster_R0 - n_per_cluster + n_per_block) /
-                        (n_per_block - n_per_cluster)))
-
-grid_results <- vector("list", nrow(param_grid))
+infected_pop %>% 
+  filter(TIRS_cohort == 0) %>% 
+  group_by(TIRS) %>% 
+  summarize(true_cases = sum(infected),
+            reported_cases = sum(reported))
 ```
 
 ```{r}
-for (p in 1:nrow(param_grid)) {
-  a <- param_grid$alpha[p]
-  b <- param_grid$beta[p]
-  g <- param_grid$gamma[p]
+ # filter to only community, no TIRS kids
+  community_group <- infected_pop[infected_pop$TIRS_cohort == 0,]
   
-  sim_out <- run_sims(25, trial_pop, gen_prob, 5, a, b, g, r = 0.5)
+  # number of cases per cluster and trial arm
+  comm_reported_by_cluster <- community_group %>% 
+    group_by(Cluster, TIRS) %>% 
+    summarize(reported_cases = sum(reported), .groups = "drop")
   
-  grid_results[[p]] <- data.frame(alpha = a,
-                                  beta = b,
-                                  gamma = g,
-                                  avg_R0_c = round(sim_out$avg_offspring_c, 2),
-                                  var_R0_c = round(sim_out$var_offspring_c, 2),
-                                  avg_R0_t = round(sim_out$avg_offspring_t, 2),
-                                  var_R0_t = round(sim_out$var_offspring_t, 2),
-                                  avg_RR_peak = round(sim_out$avg_rr_peak, 2),
-                                  avg_time_diff = round(sim_out$avg_time_diff, 2),
-                                  avg_prop_cases = round(sim_out$avg_prop_infected, 2),
-                                  avg_prop_sus_cases = round(sim_out$avg_prop_inf_sus, 2),
-                                  avg_cases_control = round(sim_out$avg_control_infected, 2),
-                                  avg_cases_tirs = round(sim_out$avg_tirs_infected, 2),
-                                  avg_eff_estimate_pNO = round(sim_out$avg_pois_estimate, 2),
-                                  avg_pois_reported = round(sim_out$avg_pois_reported_est, 2),
-                                  avg_eff_estimate_pPop = round(sim_out$avg_pois_pop_estimate, 2),
-                                  avg_eff_estimate_pPT = round(sim_out$avg_pois_pt_estimate, 2),
-                                  avg_eff_estimate_Cox = round(sim_out$avg_cox_estimate, 2),
-                                  avg_cox_reported = round(sim_out$avg_cox_reported_est, 2),
-                                  avg_infected_within_block = round(sim_out$avg_infected_within_block, 2),
-                                  avg_infected_within_cluster = round(sim_out$avg_infected_within_cluster, 2),
-                                  avg_infected_from_community = round(sim_out$avg_infected_from_community, 2)
-  )
-}
-
-reporting_test <- bind_rows(grid_results)
-saveRDS(reporting_test, file = "output/sim_results/param_grid_search/reporting_test.rds")
+  # situation 3 has a run where one arm has 0 cases??
+  if(any(comm_reported_by_cluster$reported_cases == 0 & comm_reported_by_cluster$TIRS %in% c(0,1))) {
+    cat("Run with zero counts found:\n")
+    print(comm_reported_by_cluster)
+    return(list(eff = NA_real_, lower = NA_real_, upper = NA_real_))
+  }
+  
+  # model
+  pois_reported_comm <- glm(reported_cases ~ TIRS, family = poisson(link = "log"),
+                            data = comm_reported_by_cluster)
+  
+  # return IRR and confint
+  irr <- exp(coef(pois_reported_comm)["TIRS"])
+  conf_int <- exp(confint(pois_reported_comm)["TIRS", ])
+  list(eff = 1 - irr,
+              lower = 1 - conf_int[2],
+              upper = 1 - conf_int[1])
 ```
 
 ## Making params.txt
 ```{r}
-param_grid <- expand.grid(block_R0   = c(0.3, 0.4, 0.5, 0.6, 0.7), 
-                          cluster_R0 = c(0.3, 0.4, 0.5, 0.6, 0.7), 
-                          gamma = c(0.5, 1, 2)) %>%
+param_grid <- expand.grid(block_R0   = 5, 
+                          cluster_R0 = 5, 
+                          gamma = c(0, 1, 2, 3, 4, 5, 6, 7, 8)) %>%
   filter(block_R0 >= cluster_R0)
 ```
 
@@ -663,877 +398,1010 @@ write.table(param_grid[, c("block_R0", "cluster_R0", "gamma")],
 ```
 
 ```{r}
-# initially infected......11? 12????
-(sum(city_cases_by_week$cases_per_week[21:25]) / sum(merida_pop$POBTOT)) * (2500*50)
+weights <- expand.grid(comm_weight_kids = c(0.8, 0.7, 0.6, 0.5), 
+                       comm_weight_adults = c(0.5, 0.4, 0.3)) %>%
+  filter(comm_weight_kids >= comm_weight_adults)
+write.table(weights[, c("comm_weight_kids", "comm_weight_adults")],
+            file = "params.txt", sep = " ", row.names = FALSE, 
+            col.names = FALSE, quote = FALSE)
 ```
 
-
-# Visualize Results
-## Obtain output from hipergator
-get all my output and put in one dataframe
+# Results
+## Alpha, Beta; 0.5, 0.4
+### No Weights
+1. Baseline
 ```{r}
-sim_output <- list.files("sim_results/param_grid_search/0p30_to_0p70", 
-                         pattern = "\\.rds$", full.names = TRUE)
+base <- read_csv(
+  "sim_results/fixed_alpha_beta_05_04/no_weights/base_summary.csv")
+```
 
-sim_df <- purrr::map_dfr(sim_output, function(f) {
-  out  <- readRDS(f)
-  meta <- str_match(basename(f),
-                    "block([0-9]+p[0-9]+)_cluster([0-9]+p[0-9]+)_gamma([0-9]+p[0-9]+)")
-  
-  tibble(
-    block_R0   = as.numeric(str_replace(meta[1, 2], "p", ".") ),
-    cluster_R0 = as.numeric(str_replace(meta[1, 3], "p", ".") ),
-    gamma      = as.numeric(str_replace(meta[1, 4], "p", ".") ),
-    !!!out
+```{r}
+ggplot(base, aes(x = gamma, y = prop_cox_yes)) +
+  geom_line() +
+  geom_point() +
+  scale_x_continuous(breaks = unique(base$gamma)) +
+  scale_y_continuous(breaks = seq(0.3, 1, by = 0.1),
+                     limits = c(0.3,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
+    subtitle = expression(textstyle("Cox model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 0.5, ") ~ beta ~ textstyle (" = 0.4")),
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+```{r}
+base_full <- readRDS("sim_results/fixed_alpha_beta_05_04/no_weights/base_full.rds")
+```
+
+```{r}
+base_wide <- base_full %>% 
+  unnest_longer(arm_counts) %>% 
+  unnest_wider(arm_counts) %>% 
+  pivot_wider(names_from = TIRS,
+              values_from = c(true_cases_arm,
+                              reported_cases_arm),
+              names_glue = "{.value}_{TIRS}") %>% 
+  unnest_longer(cluster_counts) %>% 
+  unnest_wider(cluster_counts) %>% 
+  pivot_wider(names_from = c(Cluster, TIRS),
+              values_from = c(true_cases_cluster,
+                              reported_cases_cluster),
+              names_glue = "{.value}_{Cluster}_{TIRS}")
+```
+
+Average number of true cases per cluster
+```{r}
+# small summary
+base_summ <- base_wide %>% 
+  group_by(block, cluster, gamma) %>% 
+  summarize(true_control= mean(true_cases_arm_0, na.rm = TRUE),
+            reported_control = mean(reported_cases_arm_0, na.rm = TRUE),
+            true_tirs = mean(true_cases_arm_1, na.rm = TRUE),
+            reported_tirs = mean(reported_cases_arm_1, na.rm = TRUE),
+            .groups = "drop") %>% 
+  pivot_longer(
+    cols   = -c(block, cluster, gamma),
+    names_to = c("case_type", "group"),
+    names_sep = "_", 
+    values_to = "avg_cases"
+  ) %>% 
+  mutate(
+    group = if_else(str_detect(group, "control"),  "Control",  "TIRS"),
+    case_type  = if_else(str_detect(case_type, "true"),   "True",     "Reported")
   )
-})
 
-sim_df <- sim_df %>% 
-  mutate(across(where(is.numeric), ~ round(., 2)))
+ggplot(base_summ,
+       aes(x = gamma,
+           y = avg_cases,
+           colour = group,
+           linetype = case_type,
+           group  = interaction(group, case_type))) +
+  geom_line(size = 0.75) +
+  geom_point() +
+  scale_x_continuous(breaks = unique(base_summ$gamma)) +
+  #scale_y_continuous(breaks = unique(base_summ$avg_cases)) +
+  scale_linetype_manual(values = c("True" = "solid",   "Reported" = "dashed")) +
+  scale_color_manual(values = c("Control" = "#1f78b4", "TIRS" = "#e31a1c")) +
+  labs(
+    title = "Average true / reported cases by control / TIRS arms",
+    x     = "Gamma",
+    y     = "Average cases",
+    colour = "Arm",
+    linetype = "Case type"
+  ) +
+  theme_classic()
+```
+
+
+
+2. Different Susceptibility
+
+
+# Varying Weight 1.0
+```{r}
+vw1_summary <- read_csv(
+  "sim_results/vary_weights/1_total_weights_no_diff_sus/total_no_diff_summary.csv")
+vw1_full <- read_csv(
+  "sim_results/vary_weights/1_total_weights_no_diff_sus/total_no_diff_full.csv")
 ```
 
 ```{r}
-sim_oldput <- list.files("sim_results/param_grid_search/sim_test2", 
-                         pattern = "\\.rds$", full.names = TRUE)
+ggplot(vw1_summary, aes(x = commWeight, y = prop_pois_yes)) +
+  geom_line() +
+  geom_point() +
+  scale_x_continuous(breaks = unique(vw1_summary$commWeight)) +
+  scale_y_continuous(breaks = seq(0.3, 1, by = 0.1),
+                     limits = c(0.3,1)) +
+  labs(
+    title = "Coverage of the true effect (0.039) by weight",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth",
+    x = "Weight (time spent outside the cluster)",
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+Remains consistently high!! 
 
-sim_old <- purrr::map_dfr(sim_oldput, function(f) {
-  out  <- readRDS(f)
-  meta <- str_match(basename(f),
-                    "block([0-9]+p[0-9]+)_cluster([0-9]+p[0-9]+)_gamma([0-9]+p[0-9]+)")
-  
-  tibble(
-    block_R0   = as.numeric(str_replace(meta[1, 2], "p", ".") ),
-    cluster_R0 = as.numeric(str_replace(meta[1, 3], "p", ".") ),
-    gamma      = as.numeric(str_replace(meta[1, 4], "p", ".") ),
-    !!!out
+```{r}
+vw2_summary <- read_csv(
+  "sim_results/vary_weights/2_total_weights_diff_sus/total_diff_summary.csv")
+vw2_full <- read_csv(
+  "sim_results/vary_weights/2_total_weights_diff_sus/total_diff_full.csv")
+```
+
+```{r}
+ggplot(vw2_summary, aes(x = commWeight, y = prop_pois_yes)) +
+  geom_line() +
+  geom_point() +
+  scale_x_continuous(breaks = unique(vw1_summary$commWeight)) +
+  scale_y_continuous(breaks = seq(0.3, 1, by = 0.1),
+                     limits = c(0.3,1)) +
+  labs(
+    title = "Coverage of the true effect (0.039) by weight",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth",
+    x = "Weight (time spent outside the cluster)",
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+# Fixed Alpha 1 Beta 1
+## No Weights
+### Base
+```{r}
+base_11 <- read_csv(
+  "sim_results/fixed_alpha_beta_1_1/no_weights/base_summary.csv")
+```
+
+```{r}
+ggplot(base_11, aes(x = gamma, y = prop_pois_yes)) +
+  geom_line() +
+  geom_point() +
+  scale_x_continuous(breaks = unique(base_11$gamma)) +
+  scale_y_continuous(breaks = seq(0.1, 1, by = 0.1),
+                     limits = c(0.1,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
+    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 1, ") ~ beta ~ textstyle (" = 1")),
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+Estimated effectiveness
+
+```{r}
+ggplot(base_11, aes(x = gamma, y = pois_mean)) +
+  geom_point(shape = 21, color = "black", stroke = 1) +
+  geom_line(color = "black", linetype = "solid") +
+  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "black") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(base_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
   )
-})
-
-sim_old <- sim_old %>% 
-  mutate(across(where(is.numeric), ~ round(., 2)))
-```
-
-
-## Effective Reproductive Number (Re)
-Calculate expected reproductive number
-```{r}
-sim_df$expected_block_Re <- sim_df$block_R0
-sim_df$expected_cluster_Re <- sim_df$cluster_R0
-# 70%  of ADULTS susceptible...adults are 75% of population (irl)
-# so 77.5% of total population is susceptible
-sim_df$expected_overall_Re <- (sim_df$expected_block_Re +
-  sim_df$expected_cluster_Re) * 0.775 
-sim_df$Re_diff <- abs(sim_df$expected_overall_Re - 
-  sim_df$avg_offspring_c)
 ```
 
 ```{r}
-sim_old$expected_block_Re <- sim_old$block_R0
-sim_old$expected_cluster_Re <- sim_old$cluster_R0
-# 95%  of ADULTS susceptible...adults are 75% of population (irl)
-# so 96.25% of total population is susceptible
-sim_old$expected_overall_Re <- (sim_old$expected_block_Re +
-  sim_old$expected_cluster_Re) * 0.9625 
-sim_old$Re_diff <- abs(sim_old$expected_overall_Re - 
-  sim_old$avg_offspring_c)
+base_11_full <- readRDS("sim_results/fixed_alpha_beta_1_1/no_weights/base_full.rds")
 ```
 
-Graph
+### Diff Susceptibility
 ```{r}
-ggplot(sim_df,
-       aes(factor(block_R0), factor(cluster_R0), fill = Re_diff)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%.2f - %.2f", expected_overall_Re, avg_offspring_c)),
-            colour   = "white", 
-            size     = 2.5,
-            fontface = "bold") +
-  facet_wrap(~ gamma, nrow = 3) +
-  scale_fill_gradient(name = "Diff in R_e\n(EX - Sim)") +
+ds_11<- read_csv(
+  "sim_results/fixed_alpha_beta_1_1/no_weights/ds_summary.csv")
+```
+
+```{r}
+ggplot(ds_11, aes(x = gamma, y = prop_pois_yes)) +
+  geom_line(color = "darkorchid") +
+  geom_point(color = "darkorchid") +
+  scale_x_continuous(breaks = unique(ds_11$gamma)) +
+  scale_y_continuous(breaks = seq(0.1, 1, by = 0.1),
+                     limits = c(0.1,1)) +
   labs(
-    title = "Expected vs. Simulated Re (5 sims,70% adults susceptible,\n large pop)",
-    subtitle = "Each tile: Expected - Simulated",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
+    title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
+    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(", ") ~ beta ~ textstyle (" = 1")),
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
   ) +
-  theme_minimal()
-  #theme(legend.position = "none") 
+  theme_classic() +
+  theme(legend.position = "bottom")
 ```
-So the bulk of these expected reproductive numbers are less than 1...is 0.3 too
-low? should i be doing something closer to 0.5-0.7?
 
+Estimated Effectiveness
 ```{r}
-ggplot(sim_old,
-       aes(factor(block_R0), factor(cluster_R0), fill = Re_diff)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%.2f - %.2f", expected_overall_Re, avg_offspring_c)),
-            colour   = "white", 
-            size     = 2.5,
-            fontface = "bold") +
-  facet_wrap(~ gamma, nrow = 3) +
-  scale_fill_gradient(name = "Diff in R_e\n(EX - Sim)") +
+ggplot(ds_11, aes(x = gamma, y = pois_mean)) +
+  geom_point(shape = 21, color = "darkorchid", stroke = 1) +
+  geom_line(color = "darkorchid", linetype = "solid") +
+  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "darkorchid") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
   labs(
-    title = "Expected vs. Simulated Re (5 sims, 95% adults susceptible,\n large pop)",
-    subtitle = "Each tile: Expected - Simulated",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
+    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
   ) +
-  theme_minimal()
-```
-There doesn't seem to be patterns/similarities between the two so i think a lot
-of this can be explained by stochasticity
-
-## Proportion Infected
-```{r}
-ggplot(sim_df,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_prop_infected)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%.2f", avg_prop_infected)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "Proportion of entire population infected at end of season",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
-```
-0.05 was the proportion infected at the end of the season in the actual trial...
-the best results we have for that seem to be with higher gamma...but should I be
-looking for a higher Re?
-
-```{r}
-ggplot(sim_old,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_prop_infected)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%.2f", avg_prop_infected)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "Proportion of entire population infected at end of season",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
-```
-
-
-
-```{r}
-ggplot(sim_df,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_prop_inf_sus)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%.2f", avg_prop_inf_sus)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "Proportion of susceptible population infected at end of season",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
-```
-
-```{r}
-ggplot(sim_old,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_prop_inf_sus)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%.2f", avg_prop_inf_sus)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "Proportion of susceptible population infected at end of season",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
-```
-
-
-## Estimated Efficacy
-### Poisson (no offset)
-```{r}
-ggplot(sim_df,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_pois_estimate)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%g%%", avg_pois_estimate * 100)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "TIRS efficacy estimation",
-    subtitle = "Poisson regression; all infections; true efficacy 50%",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
-```
-
-```{r}
-ggplot(sim_old,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_pois_estimate)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%g%%", avg_pois_estimate * 100)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "TIRS efficacy estimation",
-    subtitle = "Poisson regression; all infections; true efficacy 50%",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
-```
-
-
-```{r}
-ggplot(sim_df,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_pois_reported_est)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%g%%", avg_pois_reported_est * 100)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "TIRS efficacy estimation",
-    subtitle = "Poisson regression; reported infections; true efficacy 50%",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
-```
-```{r}
-ggplot(sim_old,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_pois_reported_est)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%g%%", avg_pois_reported_est * 100)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "TIRS efficacy estimation",
-    subtitle = "Poisson regression; reported infections; true efficacy 50%",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none")
-```
-
-Difference in all infections vs reported only
-```{r}
-ggplot(sim_df,
-       aes(factor(block_R0), factor(cluster_R0), 
-           fill = (abs(avg_pois_estimate - avg_pois_reported_est)))) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%g%% - %g%%", avg_pois_estimate * 100, 
-                                avg_pois_reported_est * 100)),
-            colour   = "white", 
-            size     = 2.5,
-            fontface = "bold") +
-  facet_wrap(~ gamma, nrow = 3) +
-  labs(
-    title = "Difference in efficacy estimates for all vs. reported infections",
-    subtitle = "From a Poisson regression; Each tile: all infections - reported infections",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  scale_fill_gradient(name = "Difference in estimate\n(all - reported)")
-  #theme(legend.position = "none") 
-```
-
-```{r}
-ggplot(sim_old,
-       aes(factor(block_R0), factor(cluster_R0), 
-           fill = (avg_pois_estimate - avg_pois_reported_est))) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%g%% - %g%%", avg_pois_estimate * 100, 
-                                avg_pois_reported_est * 100)),
-            colour   = "white", 
-            size     = 2.5,
-            fontface = "bold") +
-  facet_wrap(~ gamma, nrow = 3) +
-  labs(
-    title = "Difference in efficacy estimates for all vs. reported infections",
-    subtitle = "From a Poisson regression; Each tile: all infections - reported infections",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  scale_fill_gradient(name = "Difference in estimate\n(all - reported)")
-```
-
-
-### Cox
-```{r}
-ggplot(sim_df,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_cox_estimate)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%g%%", avg_cox_estimate * 100)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "TIRS efficacy estimation",
-    subtitle = "Cox regression; all infections; true efficacy 50%",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
-```
-
-```{r}
-ggplot(sim_old,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_cox_estimate)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%g%%", avg_cox_estimate * 100)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "TIRS efficacy estimation",
-    subtitle = "Cox regression; all infections; true efficacy 50%",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
-```
-
-```{r}
-ggplot(sim_df,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_cox_reported_est)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%g%%", avg_cox_reported_est * 100)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "TIRS efficacy estimation",
-    subtitle = "Cox regression; reported infections; true efficacy 50%",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
-```
-
-```{r}
-ggplot(sim_old,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_cox_reported_est)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%g%%", avg_cox_reported_est * 100)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "TIRS efficacy estimation",
-    subtitle = "Cox regression; reported infections; true efficacy 50%",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
-```
-
-Difference in all infections vs reported only
-```{r}
-ggplot(sim_df,
-       aes(factor(block_R0), factor(cluster_R0), 
-           fill = (abs(avg_cox_estimate - avg_cox_reported_est)))) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%g%% - %g%%", avg_cox_estimate * 100, 
-                                avg_cox_reported_est * 100)),
-            colour   = "white", 
-            size     = 2.5,
-            fontface = "bold") +
-  scale_fill_gradient(name = "Difference in estimate\n(all - reported)") +
-  facet_wrap(~ gamma, nrow = 3) +
-  labs(
-    title = "Difference in efficacy estimates for all vs. reported infections",
-    subtitle = "From a Cox regression; Each tile: all infections - reported infections",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() 
-  #theme(legend.position = "none") 
-```
-
-```{r}
-ggplot(sim_old,
-       aes(factor(block_R0), factor(cluster_R0), 
-           fill = (avg_cox_estimate - avg_cox_reported_est))) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%g%% - %g%%", avg_cox_estimate * 100, 
-                                avg_cox_reported_est * 100)),
-            colour   = "white", 
-            size     = 2.5,
-            fontface = "bold") +
-  scale_fill_gradient(name = "Difference in estimate\n(all - reported)") +
-  facet_wrap(~ gamma, nrow = 3) +
-  labs(
-    title = "Difference in efficacy estimates for all vs. reported infections",
-    subtitle = "From a Cox regression; Each tile: all infections - reported infections",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() 
-```
-
-
-## Proportion Infected From...
-### Block
-```{r}
-ggplot(sim_df,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_infected_within_block)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%.2f", avg_infected_within_block)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "Proportion of infections from the block",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
-```
-
-```{r}
-ggplot(sim_old,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_infected_within_block)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%.2f", avg_infected_within_block)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "Proportion of infections from the block",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
-```
-
-### Cluster
-```{r}
-ggplot(sim_df,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_infected_within_cluster)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%.2f", avg_infected_within_cluster)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "Proportion of infections from the cluster",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
-```
-
-```{r}
-ggplot(sim_old,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_infected_within_cluster)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%.2f", avg_infected_within_cluster)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "Proportion of infections from the cluster",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
-```
-
-### Community
-```{r}
-ggplot(sim_df,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_infected_from_community)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%.2f", avg_infected_from_community)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "Proportion of infections from the community",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
-```
-
-```{r}
-ggplot(sim_old,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_infected_from_community)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%.2f", avg_infected_from_community)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "Proportion of infections from the community",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
-```
-
-# 10 sims
-## Obtain output from Hipergator
-```{r}
-sim_10 <- list.files("sim_results/param_grid_search/10sims_p30_p70", 
-                         pattern = "\\.rds$", full.names = TRUE)
-
-sim10_df <- purrr::map_dfr(sim_10, function(f) {
-  out  <- readRDS(f)
-  meta <- str_match(basename(f),
-                    "block([0-9]+p[0-9]+)_cluster([0-9]+p[0-9]+)_gamma([0-9]+p[0-9]+)")
-  
-  tibble(
-    block_R0   = as.numeric(str_replace(meta[1, 2], "p", ".") ),
-    cluster_R0 = as.numeric(str_replace(meta[1, 3], "p", ".") ),
-    gamma      = as.numeric(str_replace(meta[1, 4], "p", ".") ),
-    !!!out
+  scale_x_continuous(breaks = unique(ds_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
   )
-})
-
-sim10_df <- sim10_df %>% 
-  mutate(across(where(is.numeric), ~ round(., 2)))
 ```
 
-## Effective Reproductive Number (Re)
-Calculate expected reproductive number
+
 ```{r}
-sim10_df$expected_block_Re <- sim10_df$block_R0
-sim10_df$expected_cluster_Re <- sim10_df$cluster_R0
-# 70%  of ADULTS susceptible...adults are 75% of population (irl)
-# so 77.5% of total population is susceptible
-sim10_df$expected_overall_Re <- (sim10_df$expected_block_Re +
-  sim10_df$expected_cluster_Re) * 0.775 
-sim10_df$Re_diff <- (sim10_df$expected_overall_Re - 
-  sim10_df$avg_offspring_c)
+ds_11_full <- readRDS(
+  "sim_results/fixed_alpha_beta_1_1/no_weights/ds_full.rds")
 ```
 
-Graph
+
+## Weights
+### Situation 1
 ```{r}
-ggplot(sim10_df,
-       aes(factor(block_R0), factor(cluster_R0), fill = Re_diff)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%.2f - %.2f", expected_overall_Re, avg_offspring_c)),
-            colour   = "white", 
-            size     = 2.5,
-            fontface = "bold") +
-  facet_wrap(~ gamma, nrow = 3) +
-  scale_fill_gradient(name = "Diff in R_e\n(EX - Sim)") +
+s1_11<- read_csv(
+  "sim_results/fixed_alpha_beta_1_1/weights/s1_summary.csv")
+```
+
+```{r}
+ggplot(s1_11, aes(x = gamma, y = prop_pois_yes)) +
+    geom_line(color = "cadetblue3") +
+  geom_point(color = "cadetblue3") +
+  scale_x_continuous(breaks = unique(s1_11$gamma)) +
+  scale_y_continuous(breaks = seq(0.3, 1, by = 0.1),
+                     limits = c(0.3,1)) +
   labs(
-    title = "Expected vs. Simulated Re (10 sims,70% adults susceptible,\n large pop)",
-    subtitle = "Each tile: Expected - Simulated",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
+    title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
+    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 1, ") ~ beta ~ textstyle (" = 1")),
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
   ) +
-  theme_minimal()
-  #theme(legend.position = "none") 
-```
-For an expected R_e of greater than 1 we're looking at the 0.6, 0.7 range
-
-
-## Proportion Infected
-```{r}
-ggplot(sim10_df,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_prop_infected)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%.2f", avg_prop_infected)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "Proportion of entire population infected at end of season",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
-```
-Proportion infected should be around 0.05, which puts us in the gamma = 1 range...
-(should still test other combinations?? higher imports/low local R_e????)
-Here the range is around 0.5-0.7
-Want to combine the two
-
-```{r}
-ggplot(sim10_df,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_prop_inf_sus)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%.2f", avg_prop_inf_sus)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "Proportion of susceptible population infected at end of season",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
+  theme_classic() +
+  theme(legend.position = "bottom")
 ```
 
-## Estimated Efficacy
-### Poisson (no offset)
 ```{r}
-ggplot(sim10_df,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_pois_estimate)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%g%%", avg_pois_estimate * 100)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "TIRS efficacy estimation",
-    subtitle = "Poisson regression; all infections; true efficacy 50%",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
-```
-With more imports, tends to underestimate? or at least the estimates generally
-seem to be lower as imports increase.
-Overestimates at higher R_e, but underestimates at low??? does that make sense?
-
-```{r}
-ggplot(sim10_df,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_pois_reported_est)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%g%%", avg_pois_reported_est * 100)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "TIRS efficacy estimation",
-    subtitle = "Poisson regression; reported infections; true efficacy 50%",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
+s1_11_full<- readRDS(
+  "sim_results/fixed_alpha_beta_1_1/weights/s1_full.rds")
 ```
 
-Difference in all infections vs reported only
+Estimated Effectiveness
 ```{r}
-ggplot(sim10_df,
-       aes(factor(block_R0), factor(cluster_R0), 
-           fill = ((avg_pois_estimate - avg_pois_reported_est)))) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%g%% - %g%%", avg_pois_estimate * 100, 
-                                avg_pois_reported_est * 100)),
-            colour   = "white", 
-            size     = 2.5,
-            fontface = "bold") +
-  facet_wrap(~ gamma, nrow = 3) +
+ggplot(s1_11, aes(x = gamma, y = pois_mean)) +
+  geom_point(shape = 21, color = "cadetblue3", stroke = 1) +
+  geom_line(color = "cadetblue3", linetype = "solid") +
+  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "cadetblue3") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
   labs(
-    title = "Difference in efficacy estimates for all vs. reported infections",
-    subtitle = "From a Poisson regression; Each tile: all infections - reported infections",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
+    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
   ) +
-  theme_minimal() +
-  scale_fill_gradient(name = "diff in estimate\n(all - reported)")
-  #theme(legend.position = "none") 
-```
-don't think i can reeeeally make out a pattern from this
-though general tendency to overestimate effectiveness when using reported data
-
-### Cox
-```{r}
-ggplot(sim10_df,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_cox_estimate)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%g%%", avg_cox_estimate * 100)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "TIRS efficacy estimation",
-    subtitle = "Cox regression; all infections; true efficacy 50%",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
+  scale_x_continuous(breaks = unique(ds_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
 ```
 
-
+### Situation 2
 ```{r}
-ggplot(sim10_df,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_cox_reported_est)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%g%%", avg_cox_reported_est * 100)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "TIRS efficacy estimation",
-    subtitle = "Cox regression; reported infections; true efficacy 50%",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
-```
-Difference in all infections vs reported only
-```{r}
-ggplot(sim10_df,
-       aes(factor(block_R0), factor(cluster_R0), 
-           fill = ((avg_cox_estimate - avg_cox_reported_est)))) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%g%% - %g%%", avg_cox_estimate * 100, 
-                                avg_cox_reported_est * 100)),
-            colour   = "white", 
-            size     = 2.5,
-            fontface = "bold") +
-  scale_fill_gradient(name = "Difference in estimate\n(all - reported)") +
-  facet_wrap(~ gamma, nrow = 3) +
-  labs(
-    title = "Difference in efficacy estimates for all vs. reported infections",
-    subtitle = "From a Cox regression; Each tile: all infections - reported infections",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() 
-  #theme(legend.position = "none") 
-```
-also not too much of a pattern? generally though the estimates from reporting 
-don't seem TOO far off from thea actual values? though overall tends to 
-overestimate the effects
-underestimation tends to be in the lower Re values
-
-
-## Proportion Infected From...
-### Block
-```{r}
-ggplot(sim10_df,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_infected_within_block)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%.2f", avg_infected_within_block)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "Proportion of infections from the block",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
+s2_11<- read_csv(
+  "sim_results/fixed_alpha_beta_1_1/weights/s2_summary.csv")
 ```
 
-### Cluster
 ```{r}
-ggplot(sim10_df,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_infected_within_cluster)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%.2f", avg_infected_within_cluster)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
+ggplot(s2_11, aes(x = gamma, y = prop_pois_yes)) +
+  geom_line(color = "chocolate3") +
+  geom_point(color = "chocolate3") +
+  scale_x_continuous(breaks = unique(s2_11$gamma)) +
+  scale_y_continuous(breaks = seq(0.3, 1, by = 0.1),
+                     limits = c(0.3,1)) +
   labs(
-    title = "Proportion of infections from the cluster",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
+    title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
+    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 1, ") ~ beta ~ textstyle (" = 1")),
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
   ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
+  theme_classic() +
+  theme(legend.position = "bottom")
 ```
 
-### Community
 ```{r}
-ggplot(sim10_df,
-       aes(factor(block_R0), factor(cluster_R0), fill = avg_infected_from_community)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%.2f", avg_infected_from_community)),
-            colour   = "white", 
-            size     = 3,
-            fontface = "bold") +
-  facet_wrap(~ gamma) +
-  scale_fill_viridis_c() +
+s2_11_full <- readRDS(
+  "sim_results/fixed_alpha_beta_1_1/weights/s2_full.rds")
+```
+
+Estimated Effectiveness
+```{r}
+ggplot(s2_11, aes(x = gamma, y = pois_mean)) +
+  geom_point(shape = 21, color = "chocolate3", stroke = 1) +
+  geom_line(color = "chocolate3", linetype = "solid") +
+  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "chocolate3") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
   labs(
-    title = "Proportion of infections from the community",
-    x = expression(block_Re (alpha)),
-    y = expression(cluster_Re (beta))
+    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
   ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
+  scale_x_continuous(breaks = unique(ds_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+```
+
+### Situation 3
+```{r}
+s3_11<- read_csv(
+  "sim_results/fixed_alpha_beta_1_1/weights/s3_summary.csv")
+s3_11_full <- readRDS(
+  "sim_results/fixed_alpha_beta_1_1/weights/s3_full.rds")
+```
+
+```{r}
+ggplot(s3_11, aes(x = gamma, y = prop_pois_yes)) +
+  geom_line(color = "darkseagreen3") +
+  geom_point(color = "darkseagreen3") +
+  scale_x_continuous(breaks = unique(s3_11$gamma)) +
+  scale_y_continuous(breaks = seq(0.3, 1, by = 0.1),
+                     limits = c(0.3,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
+    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 1, ") ~ beta ~ textstyle (" = 1")),
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+Estimated Effectiveness
+```{r}
+ggplot(s3_11, aes(x = gamma, y = pois_mean)) +
+  geom_point(shape = 21, color = "darkseagreen3", stroke = 1) +
+  geom_line(color = "darkseagreen3", linetype = "solid") +
+  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "darkseagreen3") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(ds_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+```
+
+### Situation 4
+```{r}
+s4_11 <- read_csv(
+  "sim_results/fixed_alpha_beta_1_1/weights/s4_summary.csv")
+s4_11_full <- readRDS(
+  "sim_results/fixed_alpha_beta_1_1/weights/s4_full.rds")
+```
+
+```{r}
+ggplot(s4_11, aes(x = gamma, y = prop_pois_yes)) +
+  geom_line(color = "rosybrown2") +
+  geom_point(color = "rosybrown2") +
+  scale_x_continuous(breaks = unique(s4_11$gamma)) +
+  scale_y_continuous(breaks = seq(0.3, 1, by = 0.1),
+                     limits = c(0.3,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
+    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 1, ") ~ beta ~ textstyle (" = 1")),
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+Estimated Effectiveness
+```{r}
+ggplot(s4_11, aes(x = gamma, y = pois_mean)) +
+  geom_point(shape = 21, color = "rosybrown2", stroke = 1) +
+  geom_line(color = "rosybrown2", linetype = "solid") +
+  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "rosybrown2") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(ds_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+```
+
+# Higher Efficacy and AlphaBeta 0.9
+## No Weights
+### Base
+```{r}
+base_he <- read_csv(
+  "sim_results/vary_gamma_0909he/no_weights/base_summary.csv")
+base_he <- base_he %>%
+  filter(block == 0.9)
+base_he_full <- readRDS("sim_results/vary_gamma_0909he/no_weights/base_full.rds")
+base_he_full <- base_he_full %>%
+  filter(block == 0.9)
+```
+
+```{r}
+ggplot(base_he, aes(x = gamma, y = prop_pois_yes)) +
+  geom_line() +
+  geom_point() +
+  scale_x_continuous(breaks = unique(base_he$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
+    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 0.9, ") ~ beta ~ textstyle (" = 0.9")),
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+Estimated Effectiveness
+```{r}
+ggplot(base_he, aes(x = gamma, y = pois_mean)) +
+  geom_point(shape = 21, color = "black", stroke = 1) +
+  geom_line(color = "black", linetype = "solid") +
+  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "black") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(base_he$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+```
+
+
+### Differential Suscepbility
+```{r}
+ds_he <- read_csv(
+  "sim_results/vary_gamma_0909he/no_weights/ds_summary.csv")
+ds_he <- ds_he %>% 
+  filter(block == 0.9)
+ds_he_full <- readRDS(
+  "sim_results/vary_gamma_0909he/no_weights/ds_full.rds")
+ds_he_full <- ds_he_full %>% 
+  filter(block == 0.9)
+```
+
+```{r}
+ggplot(ds_he, aes(x = gamma, y = prop_pois_yes)) +
+  geom_line(color = "darkorchid") +
+  geom_point(color = "darkorchid") +
+  scale_x_continuous(breaks = unique(ds_he$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
+    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 0.9, ") ~ beta ~ textstyle (" = 0.9")),
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+Estimated Effectiveness
+```{r}
+ggplot(ds_he, aes(x = gamma, y = pois_mean)) +
+  geom_point(shape = 21, color = "darkorchid", stroke = 1) +
+  geom_line(color = "darkorchid", linetype = "solid") +
+  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "darkorchid") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(base_he$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+```
+
+## Weights 
+### Situation 1
+```{r}
+s1_he <- read_csv(
+  "sim_results/vary_gamma_0909he/weights/s1_summary.csv")
+s1_he <- s1_he %>% 
+  filter(block == 0.9)
+s1_he_full <- readRDS(
+  "sim_results/vary_gamma_0909he/weights/s1_full.rds")
+s1_he_full <- s1_he_full %>% 
+  filter(block == 0.9)
+```
+
+```{r}
+ggplot(s1_he, aes(x = gamma, y = prop_pois_yes)) +
+  geom_line(color = "cadetblue3") +
+  geom_point(color = "cadetblue3") +
+  scale_x_continuous(breaks = unique(s1_he$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
+    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 0.9, ") ~ beta ~ textstyle (" = 0.9")),
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+Estimated Effectiveness
+```{r}
+ggplot(s1_he, aes(x = gamma, y = pois_mean)) +
+  geom_point(shape = 21, color = "cadetblue3", stroke = 1) +
+  geom_line(color = "cadetblue3", linetype = "solid") +
+  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "cadetblue3") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(base_he$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+```
+
+### Situation 2
+```{r}
+s2_he <- read_csv(
+  "sim_results/vary_gamma_0909he/weights/s2_summary.csv")
+s2_he <- s2_he %>% 
+  filter(block == 0.9)
+s2_he_full <- readRDS(
+  "sim_results/vary_gamma_0909he/weights/s2_full.rds")
+s2_he_full <- s2_he_full %>% 
+  filter(block == 0.9)
+```
+
+```{r}
+ggplot(s2_he, aes(x = gamma, y = prop_pois_yes)) +
+  geom_line(color = "chocolate3") +
+  geom_point(color = "chocolate3") +
+  scale_x_continuous(breaks = unique(s2_he$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
+    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 0.9, ") ~ beta ~ textstyle (" = 0.9")),
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+Estimated Effectiveness
+```{r}
+ggplot(s1_he, aes(x = gamma, y = pois_mean)) +
+  geom_point(shape = 21, color = "chocolate3", stroke = 1) +
+  geom_line(color = "chocolate3", linetype = "solid") +
+  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "chocolate3") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s1_he$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+```
+
+### Situation 3
+```{r}
+s3_he <- read_csv(
+  "sim_results/vary_gamma_0909he/weights/s3_summary.csv")
+s3_he <- s3_he %>% 
+  filter(block == 0.9)
+s3_he_full <- readRDS(
+  "sim_results/vary_gamma_0909he/weights/s3_full.rds")
+s3_he_full <- s3_he_full %>% 
+  filter(block == 0.9)
+```
+
+```{r}
+ggplot(s3_he, aes(x = gamma, y = prop_pois_yes)) +
+  geom_line(color = "darkseagreen3") +
+  geom_point(color = "darkseagreen3") +
+  scale_x_continuous(breaks = unique(s3_he$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
+    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 0.9, ") ~ beta ~ textstyle (" = 0.9")),
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+Estimated Effectiveness
+```{r}
+ggplot(s3_he, aes(x = gamma, y = pois_mean)) +
+  geom_point(shape = 21, color = "darkseagreen3", stroke = 1) +
+  geom_line(color = "darkseagreen3", linetype = "solid") +
+  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "darkseagreen3") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s3_he$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+```
+
+### Situation 4
+```{r}
+s4_he <- read_csv(
+  "sim_results/vary_gamma_0909he/weights/s4_summary.csv")
+s4_he <- s4_he %>% 
+  filter(block == 0.9)
+s4_he_full <- readRDS(
+  "sim_results/vary_gamma_0909he/weights/s4_full.rds")
+s4_he_full <- s4_he_full %>% 
+  filter(block == 0.9)
+```
+
+```{r}
+ggplot(s4_he, aes(x = gamma, y = prop_pois_yes)) +
+  geom_line(color = "rosybrown2") +
+  geom_point(color = "rosybrown2") +
+  scale_x_continuous(breaks = unique(s4_he$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
+    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 0.9, ") ~ beta ~ textstyle (" = 0.9")),
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+Estimated Effectiveness
+```{r}
+ggplot(s4_he, aes(x = gamma, y = pois_mean)) +
+  geom_point(shape = 21, color = "rosybrown2", stroke = 1) +
+  geom_line(color = "rosybrown2", linetype = "solid") +
+  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "rosybrown2") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s4_he$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+```
+
+## Vary Weights
+### 1 total weights, same sus
+
+```{r}
+s1_3ab <- read_csv(
+  "sim_results/vary_weights/1_total_weights_no_diff_sus/total_no_diff_summary.csv")
+s1_3ab_full <- read_csv(
+  "sim_results/vary_weights/1_total_weights_no_diff_sus/total_no_diff_full.csv")
+```
+
+# Higher Efficacy, 3AlphaBeta
+## Weights
+### Situation 1
+```{r}
+s1_3ab <- read_csv(
+  "sim_results/higher_eff/weights_3ab/s1_summary.csv")
+s1_3ab_full <- readRDS(
+  "sim_results/higher_eff/weights_3ab/s1_full.rds")
+```
+
+```{r}
+ggplot(s1_3ab, aes(x = gamma, y = prop_cox_yes)) +
+  geom_line(color = "cadetblue3") +
+  geom_point(color = "cadetblue3") +
+  scale_x_continuous(breaks = unique(s1_3ab$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
+    subtitle = expression(textstyle("Cox model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 3, ") ~ beta ~ textstyle (" = 3")),
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+Estimated Effectiveness
+```{r}
+ggplot(s1_3ab, aes(x = gamma, y = cox_mean)) +
+  geom_point(shape = 21, color = "cadetblue3", stroke = 1) +
+  geom_line(color = "cadetblue3", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean, ymax = cox_upr_mean), width = 0.02, color = "cadetblue3") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s1_3ab$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+```
+
+### Situation 2
+```{r}
+s2_3ab <- read_csv(
+  "sim_results/higher_eff/weights_3ab/s2_summary.csv")
+s2_3ab_full <- readRDS(
+  "sim_results/higher_eff/weights_3ab/s2_full.rds")
+```
+
+```{r}
+ggplot(s2_3ab, aes(x = gamma, y = prop_cox_yes)) +
+  geom_line(color = "chocolate3") +
+  geom_point(color = "chocolate3") +
+  scale_x_continuous(breaks = unique(s2_3ab$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
+    subtitle = expression(textstyle("Cox model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 3, ") ~ beta ~ textstyle (" = 3")),
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+Estimated Effectiveness
+```{r}
+ggplot(s2_3ab, aes(x = gamma, y = cox_mean)) +
+  geom_point(shape = 21, color = "chocolate3", stroke = 1) +
+  geom_line(color = "chocolate3", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean, ymax = cox_upr_mean), width = 0.02, color = "chocolate3") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s2_3ab$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+```
+
+### Situation 3
+```{r}
+s3_3ab <- read_csv(
+  "sim_results/higher_eff/weights_3ab/s3_summary.csv")
+s3_3ab_full <- readRDS(
+  "sim_results/higher_eff/weights_3ab/s3_full.rds")
+```
+
+```{r}
+ggplot(s3_3ab, aes(x = gamma, y = prop_cox_yes)) +
+  geom_line(color = "darkseagreen3") +
+  geom_point(color = "darkseagreen3") +
+  scale_x_continuous(breaks = unique(s3_3ab$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
+    subtitle = expression(textstyle("Cox model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 3, ") ~ beta ~ textstyle (" = 3")),
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+Estimated Effectiveness
+```{r}
+ggplot(s3_3ab, aes(x = gamma, y = cox_mean)) +
+  geom_point(shape = 21, color = "darkseagreen3", stroke = 1) +
+  geom_line(color = "darkseagreen3", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean, ymax = cox_upr_mean), width = 0.02, color = "darkseagreen3") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s3_3ab$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+```
+
+
+### Situation 4
+```{r}
+s4_3ab <- read_csv(
+  "sim_results/higher_eff/weights_3ab/s4_summary.csv")
+s4_3ab_full <- readRDS(
+  "sim_results/higher_eff/weights_3ab/s4_full.rds")
+```
+
+```{r}
+ggplot(s4_3ab, aes(x = gamma, y = prop_cox_yes)) +
+  geom_line(color = "rosybrown2") +
+  geom_point(color = "rosybrown2") +
+  scale_x_continuous(breaks = unique(s4_3ab$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
+    subtitle = expression(textstyle("Cox model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 3, ") ~ beta ~ textstyle (" = 3")),
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+Estimated Effectiveness
+```{r}
+ggplot(s4_3ab, aes(x = gamma, y = cox_mean)) +
+  geom_point(shape = 21, color = "rosybrown2", stroke = 1) +
+  geom_line(color = "rosybrown2", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean, ymax = cox_upr_mean), width = 0.02, color = "rosybrown2") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s4_3ab$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
 ```
