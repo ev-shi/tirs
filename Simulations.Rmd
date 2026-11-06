@@ -385,9 +385,9 @@ infected_pop %>%
 
 ## Making params.txt
 ```{r}
-param_grid <- expand.grid(block_R0   = 5, 
-                          cluster_R0 = 5, 
-                          gamma = c(0, 1, 2, 3, 4, 5, 6, 7, 8)) %>%
+param_grid <- expand.grid(block_R0   = 1, 
+                          cluster_R0 = 1, 
+                          gamma = c(0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3)) %>%
   filter(block_R0 >= cluster_R0)
 ```
 
@@ -664,11 +664,13 @@ ds_11_full <- readRDS(
 ### Situation 1
 ```{r}
 s1_11<- read_csv(
-  "sim_results/fixed_alpha_beta_1_1/weights/s1_summary.csv")
+  "sim_results/fixed_alpha_beta_1_1/weights/adjusted_0039/s1_summary.csv")
+s1_11_full<- readRDS(
+  "sim_results/fixed_alpha_beta_1_1/weights/adjusted_0039/s1_full.rds")
 ```
 
 ```{r}
-ggplot(s1_11, aes(x = gamma, y = prop_pois_yes)) +
+ggplot(s1_11, aes(x = gamma, y = prop_cox_yes)) +
     geom_line(color = "cadetblue3") +
   geom_point(color = "cadetblue3") +
   scale_x_continuous(breaks = unique(s1_11$gamma)) +
@@ -676,17 +678,12 @@ ggplot(s1_11, aes(x = gamma, y = prop_pois_yes)) +
                      limits = c(0.3,1)) +
   labs(
     title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
-    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 1, ") ~ beta ~ textstyle (" = 1")),
+    subtitle = expression(textstyle("Cox model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 1, ") ~ beta ~ textstyle (" = 1")),
     x = expression(gamma~" (transmission multiplier)"),
     y = "Proportion of runs with true effect inside 95% CI",
   ) +
   theme_classic() +
   theme(legend.position = "bottom")
-```
-
-```{r}
-s1_11_full<- readRDS(
-  "sim_results/fixed_alpha_beta_1_1/weights/s1_full.rds")
 ```
 
 Estimated Effectiveness
@@ -866,6 +863,9 @@ ggplot(s4_11, aes(x = gamma, y = pois_mean)) +
   )
 ```
 
+## Varying Weights
+
+
 # Higher Efficacy and AlphaBeta 0.9
 ## No Weights
 ### Base
@@ -976,7 +976,7 @@ ggplot(ds_he, aes(x = gamma, y = pois_mean)) +
   )
 ```
 
-## Weights 
+## Weights (Alpha1Beta1)
 ### Situation 1
 ```{r}
 s1_he <- read_csv(
@@ -1087,18 +1087,14 @@ ggplot(s1_he, aes(x = gamma, y = pois_mean)) +
 
 ### Situation 3
 ```{r}
-s3_he <- read_csv(
-  "sim_results/vary_gamma_0909he/weights/s3_summary.csv")
-s3_he <- s3_he %>% 
-  filter(block == 0.9)
-s3_he_full <- readRDS(
-  "sim_results/vary_gamma_0909he/weights/s3_full.rds")
-s3_he_full <- s3_he_full %>% 
-  filter(block == 0.9)
+s3_he<- read_csv(
+  "sim_results/fixed_alpha_beta_1_1/weights/adjusted_025/s3_summary.csv")
+s3_he_full<- readRDS(
+  "sim_results/fixed_alpha_beta_1_1/weights/adjusted_025/s3_full.rds")
 ```
 
 ```{r}
-ggplot(s3_he, aes(x = gamma, y = prop_pois_yes)) +
+ggplot(s3_he, aes(x = gamma, y = prop_cox_yes)) +
   geom_line(color = "darkseagreen3") +
   geom_point(color = "darkseagreen3") +
   scale_x_continuous(breaks = unique(s3_he$gamma)) +
@@ -1106,7 +1102,7 @@ ggplot(s3_he, aes(x = gamma, y = prop_pois_yes)) +
                      limits = c(0,1)) +
   labs(
     title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
-    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 0.9, ") ~ beta ~ textstyle (" = 0.9")),
+    subtitle = expression(textstyle("Cox model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 0.9, ") ~ beta ~ textstyle (" = 0.9")),
     x = expression(gamma~" (transmission multiplier)"),
     y = "Proportion of runs with true effect inside 95% CI",
   ) +
