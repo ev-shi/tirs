@@ -407,159 +407,17 @@ write.table(weights[, c("comm_weight_kids", "comm_weight_adults")],
 ```
 
 # Results
-## Alpha, Beta; 0.5, 0.4
-### No Weights
-1. Baseline
-```{r}
-base <- read_csv(
-  "sim_results/fixed_alpha_beta_05_04/no_weights/base_summary.csv")
-```
-
-```{r}
-ggplot(base, aes(x = gamma, y = prop_cox_yes)) +
-  geom_line() +
-  geom_point() +
-  scale_x_continuous(breaks = unique(base$gamma)) +
-  scale_y_continuous(breaks = seq(0.3, 1, by = 0.1),
-                     limits = c(0.3,1)) +
-  labs(
-    title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
-    subtitle = expression(textstyle("Cox model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 0.5, ") ~ beta ~ textstyle (" = 0.4")),
-    x = expression(gamma~" (transmission multiplier)"),
-    y = "Proportion of runs with true effect inside 95% CI",
-  ) +
-  theme_classic() +
-  theme(legend.position = "bottom")
-```
-
-```{r}
-base_full <- readRDS("sim_results/fixed_alpha_beta_05_04/no_weights/base_full.rds")
-```
-
-```{r}
-base_wide <- base_full %>% 
-  unnest_longer(arm_counts) %>% 
-  unnest_wider(arm_counts) %>% 
-  pivot_wider(names_from = TIRS,
-              values_from = c(true_cases_arm,
-                              reported_cases_arm),
-              names_glue = "{.value}_{TIRS}") %>% 
-  unnest_longer(cluster_counts) %>% 
-  unnest_wider(cluster_counts) %>% 
-  pivot_wider(names_from = c(Cluster, TIRS),
-              values_from = c(true_cases_cluster,
-                              reported_cases_cluster),
-              names_glue = "{.value}_{Cluster}_{TIRS}")
-```
-
-Average number of true cases per cluster
-```{r}
-# small summary
-base_summ <- base_wide %>% 
-  group_by(block, cluster, gamma) %>% 
-  summarize(true_control= mean(true_cases_arm_0, na.rm = TRUE),
-            reported_control = mean(reported_cases_arm_0, na.rm = TRUE),
-            true_tirs = mean(true_cases_arm_1, na.rm = TRUE),
-            reported_tirs = mean(reported_cases_arm_1, na.rm = TRUE),
-            .groups = "drop") %>% 
-  pivot_longer(
-    cols   = -c(block, cluster, gamma),
-    names_to = c("case_type", "group"),
-    names_sep = "_", 
-    values_to = "avg_cases"
-  ) %>% 
-  mutate(
-    group = if_else(str_detect(group, "control"),  "Control",  "TIRS"),
-    case_type  = if_else(str_detect(case_type, "true"),   "True",     "Reported")
-  )
-
-ggplot(base_summ,
-       aes(x = gamma,
-           y = avg_cases,
-           colour = group,
-           linetype = case_type,
-           group  = interaction(group, case_type))) +
-  geom_line(size = 0.75) +
-  geom_point() +
-  scale_x_continuous(breaks = unique(base_summ$gamma)) +
-  #scale_y_continuous(breaks = unique(base_summ$avg_cases)) +
-  scale_linetype_manual(values = c("True" = "solid",   "Reported" = "dashed")) +
-  scale_color_manual(values = c("Control" = "#1f78b4", "TIRS" = "#e31a1c")) +
-  labs(
-    title = "Average true / reported cases by control / TIRS arms",
-    x     = "Gamma",
-    y     = "Average cases",
-    colour = "Arm",
-    linetype = "Case type"
-  ) +
-  theme_classic()
-```
-
-
-
-2. Different Susceptibility
-
-
-# Varying Weight 1.0
-```{r}
-vw1_summary <- read_csv(
-  "sim_results/vary_weights/1_total_weights_no_diff_sus/total_no_diff_summary.csv")
-vw1_full <- read_csv(
-  "sim_results/vary_weights/1_total_weights_no_diff_sus/total_no_diff_full.csv")
-```
-
-```{r}
-ggplot(vw1_summary, aes(x = commWeight, y = prop_pois_yes)) +
-  geom_line() +
-  geom_point() +
-  scale_x_continuous(breaks = unique(vw1_summary$commWeight)) +
-  scale_y_continuous(breaks = seq(0.3, 1, by = 0.1),
-                     limits = c(0.3,1)) +
-  labs(
-    title = "Coverage of the true effect (0.039) by weight",
-    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth",
-    x = "Weight (time spent outside the cluster)",
-    y = "Proportion of runs with true effect inside 95% CI",
-  ) +
-  theme_classic() +
-  theme(legend.position = "bottom")
-```
-Remains consistently high!! 
-
-```{r}
-vw2_summary <- read_csv(
-  "sim_results/vary_weights/2_total_weights_diff_sus/total_diff_summary.csv")
-vw2_full <- read_csv(
-  "sim_results/vary_weights/2_total_weights_diff_sus/total_diff_full.csv")
-```
-
-```{r}
-ggplot(vw2_summary, aes(x = commWeight, y = prop_pois_yes)) +
-  geom_line() +
-  geom_point() +
-  scale_x_continuous(breaks = unique(vw1_summary$commWeight)) +
-  scale_y_continuous(breaks = seq(0.3, 1, by = 0.1),
-                     limits = c(0.3,1)) +
-  labs(
-    title = "Coverage of the true effect (0.039) by weight",
-    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth",
-    x = "Weight (time spent outside the cluster)",
-    y = "Proportion of runs with true effect inside 95% CI",
-  ) +
-  theme_classic() +
-  theme(legend.position = "bottom")
-```
-
 # Fixed Alpha 1 Beta 1
 ## No Weights
 ### Base
 ```{r}
 base_11 <- read_csv(
   "sim_results/fixed_alpha_beta_1_1/no_weights/base_summary.csv")
+base_11_full <- readRDS("sim_results/fixed_alpha_beta_1_1/no_weights/base_full.rds")
 ```
 
 ```{r}
-ggplot(base_11, aes(x = gamma, y = prop_pois_yes)) +
+ggplot(base_11, aes(x = gamma, y = prop_cox_yes_full)) +
   geom_line() +
   geom_point() +
   scale_x_continuous(breaks = unique(base_11$gamma)) +
@@ -567,7 +425,37 @@ ggplot(base_11, aes(x = gamma, y = prop_pois_yes)) +
                      limits = c(0.1,1)) +
   labs(
     title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
-    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 1, ") ~ beta ~ textstyle (" = 1")),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: All",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(base_11, aes(x = gamma, y = prop_cox_yes_adults)) +
+  geom_line() +
+  geom_point() +
+  scale_x_continuous(breaks = unique(base_11$gamma)) +
+  scale_y_continuous(breaks = seq(0.1, 1, by = 0.1),
+                     limits = c(0.1,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Adults",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(base_11, aes(x = gamma, y = prop_cox_yes_kids)) +
+  geom_line() +
+  geom_point() +
+  scale_x_continuous(breaks = unique(base_11$gamma)) +
+  scale_y_continuous(breaks = seq(0.1, 1, by = 0.1),
+                     limits = c(0.1,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Children",
     x = expression(gamma~" (transmission multiplier)"),
     y = "Proportion of runs with true effect inside 95% CI",
   ) +
@@ -578,15 +466,59 @@ ggplot(base_11, aes(x = gamma, y = prop_pois_yes)) +
 Estimated effectiveness
 
 ```{r}
-ggplot(base_11, aes(x = gamma, y = pois_mean)) +
+ggplot(base_11, aes(x = gamma, y = cox_mean_full)) +
   geom_point(shape = 21, color = "black", stroke = 1) +
   geom_line(color = "black", linetype = "solid") +
-  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "black") +
-  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  geom_errorbar(aes(ymin = cox_lwr_mean_adults, ymax = cox_upr_mean_adults), width = 0.02, color = "black") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
   labs(
-    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
-    subtitle = "True efficacy = 3.9%",
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%; Population: All",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(base_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(base_11, aes(x = gamma, y = cox_mean_adults)) +
+  geom_point(shape = 21, color = "black", stroke = 1) +
+  geom_line(color = "black", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_adults, ymax = cox_upr_mean_adults), width = 0.02, color = "black") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%; Population: Adults",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(base_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(base_11, aes(x = gamma, y = cox_mean_kids)) +
+  geom_point(shape = 21, color = "black", stroke = 1) +
+  geom_line(color = "black", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_kids, ymax = cox_upr_mean_kids), width = 0.02, color = "black") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%; Population: Children",
     x = expression(gamma),
     y = "Estimated efficacy (1 – HR)"
   ) +
@@ -601,18 +533,16 @@ ggplot(base_11, aes(x = gamma, y = pois_mean)) +
   )
 ```
 
-```{r}
-base_11_full <- readRDS("sim_results/fixed_alpha_beta_1_1/no_weights/base_full.rds")
-```
-
 ### Diff Susceptibility
 ```{r}
 ds_11<- read_csv(
   "sim_results/fixed_alpha_beta_1_1/no_weights/ds_summary.csv")
+ds_11_full <- readRDS(
+  "sim_results/fixed_alpha_beta_1_1/no_weights/ds_full.rds")
 ```
 
 ```{r}
-ggplot(ds_11, aes(x = gamma, y = prop_pois_yes)) +
+ggplot(ds_11, aes(x = gamma, y = prop_cox_yes_full)) +
   geom_line(color = "darkorchid") +
   geom_point(color = "darkorchid") +
   scale_x_continuous(breaks = unique(ds_11$gamma)) +
@@ -620,7 +550,37 @@ ggplot(ds_11, aes(x = gamma, y = prop_pois_yes)) +
                      limits = c(0.1,1)) +
   labs(
     title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
-    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(", ") ~ beta ~ textstyle (" = 1")),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: All",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(ds_11, aes(x = gamma, y = prop_cox_yes_adults)) +
+  geom_line(color = "darkorchid") +
+  geom_point(color = "darkorchid") +
+  scale_x_continuous(breaks = unique(ds_11$gamma)) +
+  scale_y_continuous(breaks = seq(0.1, 1, by = 0.1),
+                     limits = c(0.1,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Adults",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(ds_11, aes(x = gamma, y = prop_cox_yes_kids)) +
+  geom_line(color = "darkorchid") +
+  geom_point(color = "darkorchid") +
+  scale_x_continuous(breaks = unique(ds_11$gamma)) +
+  scale_y_continuous(breaks = seq(0.1, 1, by = 0.1),
+                     limits = c(0.1,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Children",
     x = expression(gamma~" (transmission multiplier)"),
     y = "Proportion of runs with true effect inside 95% CI",
   ) +
@@ -630,15 +590,15 @@ ggplot(ds_11, aes(x = gamma, y = prop_pois_yes)) +
 
 Estimated Effectiveness
 ```{r}
-ggplot(ds_11, aes(x = gamma, y = pois_mean)) +
+ggplot(ds_11, aes(x = gamma, y = pois_mean_full)) +
   geom_point(shape = 21, color = "darkorchid", stroke = 1) +
   geom_line(color = "darkorchid", linetype = "solid") +
-  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "darkorchid") +
-  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  geom_errorbar(aes(ymin = pois_lwr_mean_full, ymax = pois_upr_mean_full), width = 0.02, color = "darkorchid") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
   labs(
     title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
-    subtitle = "True efficacy = 3.9%",
+    subtitle = "True efficacy = 3.9%; Population: All",
     x = expression(gamma),
     y = "Estimated efficacy (1 – HR)"
   ) +
@@ -651,12 +611,50 @@ ggplot(ds_11, aes(x = gamma, y = pois_mean)) +
     axis.title   = element_text(size = 12),
     legend.position = "bottom"
   )
-```
 
+ggplot(ds_11, aes(x = gamma, y = pois_mean_adults)) +
+  geom_point(shape = 21, color = "darkorchid", stroke = 1) +
+  geom_line(color = "darkorchid", linetype = "solid") +
+  geom_errorbar(aes(ymin = pois_lwr_mean_adults, ymax = pois_upr_mean_adults), width = 0.02, color = "darkorchid") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
+  labs(
+    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%; Population: Adults",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(ds_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
 
-```{r}
-ds_11_full <- readRDS(
-  "sim_results/fixed_alpha_beta_1_1/no_weights/ds_full.rds")
+ggplot(ds_11, aes(x = gamma, y = pois_mean_kids)) +
+  geom_point(shape = 21, color = "darkorchid", stroke = 1) +
+  geom_line(color = "darkorchid", linetype = "solid") +
+  geom_errorbar(aes(ymin = pois_lwr_mean_kids, ymax = pois_upr_mean_kids), width = 0.02, color = "darkorchid") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
+  labs(
+    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%; Population: Children",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(ds_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
 ```
 
 
@@ -669,16 +667,51 @@ s1_11_full<- readRDS(
   "sim_results/fixed_alpha_beta_1_1/weights/adjusted_0039/s1_full.rds")
 ```
 
+adjust gamma
 ```{r}
-ggplot(s1_11, aes(x = gamma, y = prop_cox_yes)) +
+s1_11$gamma <- s1_11$gamma * 0.5
+```
+
+```{r}
+ggplot(s1_11, aes(x = gamma, y = prop_cox_yes_full)) +
     geom_line(color = "cadetblue3") +
   geom_point(color = "cadetblue3") +
   scale_x_continuous(breaks = unique(s1_11$gamma)) +
-  scale_y_continuous(breaks = seq(0.3, 1, by = 0.1),
-                     limits = c(0.3,1)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
   labs(
     title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
-    subtitle = expression(textstyle("Cox model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 1, ") ~ beta ~ textstyle (" = 1")),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: All",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s1_11, aes(x = gamma, y = prop_cox_yes_adults)) +
+    geom_line(color = "cadetblue3") +
+  geom_point(color = "cadetblue3") +
+  scale_x_continuous(breaks = unique(s1_11$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Adults",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s1_11, aes(x = gamma, y = prop_cox_yes_kids)) +
+    geom_line(color = "cadetblue3") +
+  geom_point(color = "cadetblue3") +
+  scale_x_continuous(breaks = unique(s1_11$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Chindren",
     x = expression(gamma~" (transmission multiplier)"),
     y = "Proportion of runs with true effect inside 95% CI",
   ) +
@@ -688,19 +721,63 @@ ggplot(s1_11, aes(x = gamma, y = prop_cox_yes)) +
 
 Estimated Effectiveness
 ```{r}
-ggplot(s1_11, aes(x = gamma, y = pois_mean)) +
+ggplot(s1_11, aes(x = gamma, y = cox_mean_full)) +
   geom_point(shape = 21, color = "cadetblue3", stroke = 1) +
   geom_line(color = "cadetblue3", linetype = "solid") +
-  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "cadetblue3") +
-  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  geom_errorbar(aes(ymin = cox_lwr_mean_full, ymax = cox_upr_mean_full), width = 0.02, color = "cadetblue3") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
   labs(
-    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
-    subtitle = "True efficacy = 3.9%",
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%: Population: All",
     x = expression(gamma),
     y = "Estimated efficacy (1 – HR)"
   ) +
-  scale_x_continuous(breaks = unique(ds_11$gamma)) +
+  scale_x_continuous(breaks = unique(s1_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s1_11, aes(x = gamma, y = cox_mean_adults)) +
+  geom_point(shape = 21, color = "cadetblue3", stroke = 1) +
+  geom_line(color = "cadetblue3", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_adults, ymax = cox_upr_mean_adults), width = 0.02, color = "cadetblue3") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%: Population: Adults",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s1_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s1_11, aes(x = gamma, y = cox_mean_kids)) +
+  geom_point(shape = 21, color = "cadetblue3", stroke = 1) +
+  geom_line(color = "cadetblue3", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_kids, ymax = cox_upr_mean_kids), width = 0.02, color = "cadetblue3") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%: Population: Children",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s1_11$gamma)) +
 #  scale_y_continuous(limits = c(0, 0.12)) + 
   theme_classic() +
   theme(
@@ -714,19 +791,56 @@ ggplot(s1_11, aes(x = gamma, y = pois_mean)) +
 ### Situation 2
 ```{r}
 s2_11<- read_csv(
-  "sim_results/fixed_alpha_beta_1_1/weights/s2_summary.csv")
+  "sim_results/fixed_alpha_beta_1_1/weights/adjusted_0039/s2_summary.csv")
+s2_11_full<- readRDS(
+  "sim_results/fixed_alpha_beta_1_1/weights/adjusted_0039/s2_full.rds")
+```
+
+adjust gamma
+```{r}
+s2_11$gamma <- s2_11$gamma * 0.5
 ```
 
 ```{r}
-ggplot(s2_11, aes(x = gamma, y = prop_pois_yes)) +
+ggplot(s2_11, aes(x = gamma, y = prop_cox_yes_full)) +
   geom_line(color = "chocolate3") +
   geom_point(color = "chocolate3") +
   scale_x_continuous(breaks = unique(s2_11$gamma)) +
-  scale_y_continuous(breaks = seq(0.3, 1, by = 0.1),
-                     limits = c(0.3,1)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
   labs(
     title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
-    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 1, ") ~ beta ~ textstyle (" = 1")),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: All",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s2_11, aes(x = gamma, y = prop_cox_yes_adults)) +
+  geom_line(color = "chocolate3") +
+  geom_point(color = "chocolate3") +
+  scale_x_continuous(breaks = unique(s2_11$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Adults",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s2_11, aes(x = gamma, y = prop_cox_yes_kids)) +
+  geom_line(color = "chocolate3") +
+  geom_point(color = "chocolate3") +
+  scale_x_continuous(breaks = unique(s2_11$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Children",
     x = expression(gamma~" (transmission multiplier)"),
     y = "Proportion of runs with true effect inside 95% CI",
   ) +
@@ -734,26 +848,65 @@ ggplot(s2_11, aes(x = gamma, y = prop_pois_yes)) +
   theme(legend.position = "bottom")
 ```
 
-```{r}
-s2_11_full <- readRDS(
-  "sim_results/fixed_alpha_beta_1_1/weights/s2_full.rds")
-```
-
 Estimated Effectiveness
 ```{r}
-ggplot(s2_11, aes(x = gamma, y = pois_mean)) +
+ggplot(s2_11, aes(x = gamma, y = cox_mean_full)) +
   geom_point(shape = 21, color = "chocolate3", stroke = 1) +
   geom_line(color = "chocolate3", linetype = "solid") +
-  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "chocolate3") +
-  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  geom_errorbar(aes(ymin = pois_lwr_mean_full, ymax = pois_upr_mean_full), width = 0.02, color = "chocolate3") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
   labs(
-    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
-    subtitle = "True efficacy = 3.9%",
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%; Population: All",
     x = expression(gamma),
     y = "Estimated efficacy (1 – HR)"
   ) +
-  scale_x_continuous(breaks = unique(ds_11$gamma)) +
+  scale_x_continuous(breaks = unique(s2_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s2_11, aes(x = gamma, y = cox_mean_adults)) +
+  geom_point(shape = 21, color = "chocolate3", stroke = 1) +
+  geom_line(color = "chocolate3", linetype = "solid") +
+  geom_errorbar(aes(ymin = pois_lwr_mean_full, ymax = pois_upr_mean_full), width = 0.02, color = "chocolate3") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%; Population: Adults",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s2_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s2_11, aes(x = gamma, y = cox_mean_kids)) +
+  geom_point(shape = 21, color = "chocolate3", stroke = 1) +
+  geom_line(color = "chocolate3", linetype = "solid") +
+  geom_errorbar(aes(ymin = pois_lwr_mean_full, ymax = pois_upr_mean_full), width = 0.02, color = "chocolate3") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%; Population: Children",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s2_11$gamma)) +
 #  scale_y_continuous(limits = c(0, 0.12)) + 
   theme_classic() +
   theme(
@@ -767,21 +920,56 @@ ggplot(s2_11, aes(x = gamma, y = pois_mean)) +
 ### Situation 3
 ```{r}
 s3_11<- read_csv(
-  "sim_results/fixed_alpha_beta_1_1/weights/s3_summary.csv")
-s3_11_full <- readRDS(
-  "sim_results/fixed_alpha_beta_1_1/weights/s3_full.rds")
+  "sim_results/fixed_alpha_beta_1_1/weights/adjusted_0039/s3_summary.csv")
+s3_11_full<- readRDS(
+  "sim_results/fixed_alpha_beta_1_1/weights/adjusted_0039/s3_full.rds")
+```
+
+adjust gamma
+```{r}
+s3_11$gamma <- s3_11$gamma * 0.5
 ```
 
 ```{r}
-ggplot(s3_11, aes(x = gamma, y = prop_pois_yes)) +
+ggplot(s3_11, aes(x = gamma, y = prop_cox_yes_full)) +
   geom_line(color = "darkseagreen3") +
   geom_point(color = "darkseagreen3") +
   scale_x_continuous(breaks = unique(s3_11$gamma)) +
-  scale_y_continuous(breaks = seq(0.3, 1, by = 0.1),
-                     limits = c(0.3,1)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
   labs(
     title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
-    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 1, ") ~ beta ~ textstyle (" = 1")),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: All",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s3_11, aes(x = gamma, y = prop_cox_yes_adults)) +
+  geom_line(color = "darkseagreen3") +
+  geom_point(color = "darkseagreen3") +
+  scale_x_continuous(breaks = unique(s3_11$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Adults",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s3_11, aes(x = gamma, y = prop_cox_yes_kids)) +
+  geom_line(color = "darkseagreen3") +
+  geom_point(color = "darkseagreen3") +
+  scale_x_continuous(breaks = unique(s3_11$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Children",
     x = expression(gamma~" (transmission multiplier)"),
     y = "Proportion of runs with true effect inside 95% CI",
   ) +
@@ -790,19 +978,63 @@ ggplot(s3_11, aes(x = gamma, y = prop_pois_yes)) +
 ```
 Estimated Effectiveness
 ```{r}
-ggplot(s3_11, aes(x = gamma, y = pois_mean)) +
+ggplot(s3_11, aes(x = gamma, y = cox_mean_full)) +
   geom_point(shape = 21, color = "darkseagreen3", stroke = 1) +
   geom_line(color = "darkseagreen3", linetype = "solid") +
-  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "darkseagreen3") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_full, ymax = cox_upr_mean_full), width = 0.02, color = "darkseagreen3") +
   geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
   labs(
-    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
-    subtitle = "True efficacy = 3.9%",
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%; Population: All",
     x = expression(gamma),
     y = "Estimated efficacy (1 – HR)"
   ) +
-  scale_x_continuous(breaks = unique(ds_11$gamma)) +
+  scale_x_continuous(breaks = unique(s3_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s3_11, aes(x = gamma, y = cox_mean_adults)) +
+  geom_point(shape = 21, color = "darkseagreen3", stroke = 1) +
+  geom_line(color = "darkseagreen3", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_adults, ymax = cox_upr_mean_adults), width = 0.02, color = "darkseagreen3") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%; Population: Adults",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s3_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s3_11, aes(x = gamma, y = cox_mean_kids)) +
+  geom_point(shape = 21, color = "darkseagreen3", stroke = 1) +
+  geom_line(color = "darkseagreen3", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_kids, ymax = cox_upr_mean_kids), width = 0.02, color = "darkseagreen3") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%; Population: Children",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s3_11$gamma)) +
 #  scale_y_continuous(limits = c(0, 0.12)) + 
   theme_classic() +
   theme(
@@ -815,22 +1047,57 @@ ggplot(s3_11, aes(x = gamma, y = pois_mean)) +
 
 ### Situation 4
 ```{r}
-s4_11 <- read_csv(
-  "sim_results/fixed_alpha_beta_1_1/weights/s4_summary.csv")
-s4_11_full <- readRDS(
-  "sim_results/fixed_alpha_beta_1_1/weights/s4_full.rds")
+s4_11<- read_csv(
+  "sim_results/fixed_alpha_beta_1_1/weights/adjusted_0039/s4_summary.csv")
+s4_11_full<- readRDS(
+  "sim_results/fixed_alpha_beta_1_1/weights/adjusted_0039/s4_full.rds")
+```
+
+adjust gamma
+```{r}
+s4_11$gamma <- s4_11$gamma * 0.5
 ```
 
 ```{r}
-ggplot(s4_11, aes(x = gamma, y = prop_pois_yes)) +
+ggplot(s4_11, aes(x = gamma, y = prop_cox_yes_full)) +
   geom_line(color = "rosybrown2") +
   geom_point(color = "rosybrown2") +
   scale_x_continuous(breaks = unique(s4_11$gamma)) +
-  scale_y_continuous(breaks = seq(0.3, 1, by = 0.1),
-                     limits = c(0.3,1)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
   labs(
     title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
-    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 1, ") ~ beta ~ textstyle (" = 1")),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: All",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s4_11, aes(x = gamma, y = prop_cox_yes_adults)) +
+  geom_line(color = "rosybrown2") +
+  geom_point(color = "rosybrown2") +
+  scale_x_continuous(breaks = unique(s4_11$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Adults",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s4_11, aes(x = gamma, y = prop_cox_yes_kids)) +
+  geom_line(color = "rosybrown2") +
+  geom_point(color = "rosybrown2") +
+  scale_x_continuous(breaks = unique(s4_11$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.039) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Children",
     x = expression(gamma~" (transmission multiplier)"),
     y = "Proportion of runs with true effect inside 95% CI",
   ) +
@@ -840,19 +1107,63 @@ ggplot(s4_11, aes(x = gamma, y = prop_pois_yes)) +
 
 Estimated Effectiveness
 ```{r}
-ggplot(s4_11, aes(x = gamma, y = pois_mean)) +
+ggplot(s4_11, aes(x = gamma, y = cox_mean_full)) +
   geom_point(shape = 21, color = "rosybrown2", stroke = 1) +
   geom_line(color = "rosybrown2", linetype = "solid") +
-  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "rosybrown2") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_full, ymax = cox_upr_mean_full), width = 0.02, color = "rosybrown2") +
   geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
   labs(
-    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
-    subtitle = "True efficacy = 3.9%",
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%; Population: All",
     x = expression(gamma),
     y = "Estimated efficacy (1 – HR)"
   ) +
-  scale_x_continuous(breaks = unique(ds_11$gamma)) +
+  scale_x_continuous(breaks = unique(s4_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s4_11, aes(x = gamma, y = cox_mean_adults)) +
+  geom_point(shape = 21, color = "rosybrown2", stroke = 1) +
+  geom_line(color = "rosybrown2", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_adults, ymax = cox_upr_mean_adults), width = 0.02, color = "rosybrown2") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%; Population: Adults",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s4_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s4_11, aes(x = gamma, y = cox_mean_kids)) +
+  geom_point(shape = 21, color = "rosybrown2", stroke = 1) +
+  geom_line(color = "rosybrown2", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_kids, ymax = cox_upr_mean_kids), width = 0.02, color = "rosybrown2") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 3.9%; Population: Children",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s4_11$gamma)) +
 #  scale_y_continuous(limits = c(0, 0.12)) + 
   theme_classic() +
   theme(
@@ -864,23 +1175,572 @@ ggplot(s4_11, aes(x = gamma, y = pois_mean)) +
 ```
 
 ## Varying Weights
+### 1_total_weights_no_diff_sus
+```{r}
+s1w <- read_csv(
+  "sim_results/vary_weights/1_total_weights_no_diff_sus/11_0039/1_summary.csv")
+s1w_full<- readRDS(
+  "sim_results/vary_weights/1_total_weights_no_diff_sus/11_0039/1_full.rds")
+```
 
+adjust gamma
+```{r}
+s1w$gamma <- s1w$gamma * 0.5
+```
+
+```{r}
+ggplot(s1w, aes(x = commWeight, y = prop_cox_yes_full)) +
+  geom_line(color = "darkslategray4") +
+  geom_point(color = "darkslategray4") +
+  scale_x_continuous(breaks = unique(s1w$commWeight)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Coverage of the true effect (0.039) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: All",
+    x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s1w, aes(x = commWeight, y = prop_cox_yes_adults)) +
+  geom_line(color = "darkslategray4") +
+  geom_point(color = "darkslategray4") +
+  scale_x_continuous(breaks = unique(s1w$commWeight)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Coverage of the true effect (0.039) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Adults",
+    x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s1w, aes(x = commWeight, y = prop_cox_yes_kids)) +
+  geom_line(color = "darkslategray4") +
+  geom_point(color = "darkslategray4") +
+  scale_x_continuous(breaks = unique(s1w$commWeight)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Coverage of the true effect (0.039) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Children",
+    x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+Estimated Effectiveness
+```{r}
+ggplot(s1w, aes(x = commWeight, y = cox_mean_full)) +
+  geom_point(shape = 21, color = "darkslategray4", stroke = 1) +
+  geom_line(color = "darkslategray4", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_full, ymax = cox_upr_mean_full), width = 0.02, color = "darkslategray4") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = "Cox estimated efficacy of the intervention vs. time spent in community",
+    subtitle = "True efficacy = 3.9%; Population: All",
+     x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s1w$commWeight)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s1w, aes(x = commWeight, y = cox_mean_adults)) +
+  geom_point(shape = 21, color = "darkslategray4", stroke = 1) +
+  geom_line(color = "darkslategray4", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_adults, ymax = cox_upr_mean_adults), width = 0.02, color = "darkslategray4") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = "Cox estimated efficacy of the intervention vs. time spent in community",
+    subtitle = "True efficacy = 3.9%; Population: Adults",
+     x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s1w$commWeight)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s1w, aes(x = commWeight, y = cox_mean_kids)) +
+  geom_point(shape = 21, color = "darkslategray4", stroke = 1) +
+  geom_line(color = "darkslategray4", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_kids, ymax = cox_upr_mean_kids), width = 0.02, color = "darkslategray4") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = "Cox estimated efficacy of the intervention vs. time spent in community",
+    subtitle = "True efficacy = 3.9%; Population: Children",
+     x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s1w$commWeight)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+```
+
+### 2_total_weights_diff_sus
+```{r}
+s2w <- read_csv(
+  "sim_results/vary_weights/2_total_weights_diff_sus/11_0039/2_summary.csv")
+s2w_full<- readRDS(
+  "sim_results/vary_weights/2_total_weights_diff_sus/11_0039/2_full.rds")
+```
+
+adjust gamma
+```{r}
+s2w$gamma <- s2w$gamma * 0.5
+```
+
+```{r}
+ggplot(s2w, aes(x = commWeight, y = prop_cox_yes_full)) +
+  geom_line(color = "sienna4") +
+  geom_point(color = "sienna4") +
+  scale_x_continuous(breaks = unique(s2w$commWeight)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Coverage of the true effect (0.039) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: All",
+    x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s2w, aes(x = commWeight, y = prop_cox_yes_adults)) +
+  geom_line(color = "sienna4") +
+  geom_point(color = "sienna4") +
+  scale_x_continuous(breaks = unique(s2w$commWeight)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Coverage of the true effect (0.039) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Adults",
+    x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s2w, aes(x = commWeight, y = prop_cox_yes_kids)) +
+  geom_line(color = "sienna4") +
+  geom_point(color = "sienna4") +
+  scale_x_continuous(breaks = unique(s2w$commWeight)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Coverage of the true effect (0.039) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Children",
+    x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+Estimated Effectiveness
+```{r}
+ggplot(s2w, aes(x = commWeight, y = cox_mean_full)) +
+  geom_point(shape = 21, color = "sienna4", stroke = 1) +
+  geom_line(color = "sienna4", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_full, ymax = cox_upr_mean_full), width = 0.02, color = "sienna4") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = "Cox estimated efficacy of the intervention vs. time spent in community",
+    subtitle = "True efficacy = 3.9%; Population: All",
+     x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s2w$commWeight)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s2w, aes(x = commWeight, y = cox_mean_adults)) +
+  geom_point(shape = 21, color = "sienna4", stroke = 1) +
+  geom_line(color = "sienna4", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_adults, ymax = cox_upr_mean_adults), width = 0.02, color = "sienna4") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = "Cox estimated efficacy of the intervention vs. time spent in community",
+    subtitle = "True efficacy = 3.9%; Population: Adults",
+     x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s2w$commWeight)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s2w, aes(x = commWeight, y = cox_mean_kids)) +
+  geom_point(shape = 21, color = "sienna4", stroke = 1) +
+  geom_line(color = "sienna4", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_kids, ymax = cox_upr_mean_kids), width = 0.02, color = "sienna4") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = "Cox estimated efficacy of the intervention vs. time spent in community",
+    subtitle = "True efficacy = 3.9%; Population: Children",
+     x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s2w$commWeight)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+```
+
+### 3_diff_weights_no_diff_sus
+```{r}
+s3w <- read_csv(
+  "sim_results/vary_weights/3_diff_weights_no_diff_sus/11_0039/3_summary.csv")
+s3w_full<- readRDS(
+  "sim_results/vary_weights/3_diff_weights_no_diff_sus/11_0039/3_full.rds")
+```
+
+```{r}
+ggplot(s3w, aes(x = commWeightKids, y = prop_cox_yes_full)) +
+  geom_line(color = "palegreen4") +
+  geom_point(color = "palegreen4") +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  scale_x_continuous(breaks = unique(s3w$commWeightKids)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Coverage of the true effect (0.039) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: All",
+    x = expression(textstyle("Time spent outside the cluster (children) / community weight") ~omega),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s3w, aes(x = commWeightKids, y = prop_cox_yes_adults)) +
+  geom_line(color = "palegreen4") +
+  geom_point(color = "palegreen4") +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  scale_x_continuous(breaks = unique(s3w$commWeightKids)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Coverage of the true effect (0.039) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Adults",
+    x = expression(textstyle("Time spent outside the cluster (children) / community weight") ~omega),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s3w, aes(x = commWeightKids, y = prop_cox_yes_kids)) +
+  geom_line(color = "palegreen4") +
+  geom_point(color = "palegreen4") +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  scale_x_continuous(breaks = unique(s3w$commWeightKids)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Coverage of the true effect (0.039) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Children",
+    x = expression(textstyle("Time spent outside the cluster (children) / community weight") ~omega),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+Estimated Effectiveness
+```{r}
+ggplot(s3w, aes(x = commWeightKids, y = cox_mean_full)) +
+  geom_point(shape = 21, color = "palegreen4", stroke = 1) +
+  geom_line(color = "palegreen4", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_full, ymax = cox_upr_mean_full), width = 0.02, color = "palegreen4") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  labs(
+    title = "Cox estimated efficacy of the intervention vs. time spent in city",
+    subtitle = "True efficacy = 3.9%; Population: All",
+     x = expression(textstyle("Time spent outside the cluster / community weight (children) ") ~omega),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s3w$commWeightKids)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s3w, aes(x = commWeightKids, y = cox_mean_adults)) +
+  geom_point(shape = 21, color = "palegreen4", stroke = 1) +
+  geom_line(color = "palegreen4", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_adults, ymax = cox_upr_mean_adults), width = 0.02, color = "palegreen4") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  labs(
+    title = "Cox estimated efficacy of the intervention vs. time spent in city",
+    subtitle = "True efficacy = 3.9%; Population: Adults",
+     x = expression(textstyle("Time spent outside the cluster / community weight (children) ") ~omega),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s3w$commWeightKids)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s3w, aes(x = commWeightKids, y = cox_mean_kids)) +
+  geom_point(shape = 21, color = "palegreen4", stroke = 1) +
+  geom_line(color = "palegreen4", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_kids, ymax = cox_upr_mean_kids), width = 0.02, color = "palegreen4") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  labs(
+    title = "Cox estimated efficacy of the intervention vs. time spent in city",
+    subtitle = "True efficacy = 3.9%; Population: Children",
+     x = expression(textstyle("Time spent outside the cluster / community weight (children) ") ~omega),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s3w$commWeightKids)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+```
+
+### 4_diff_weights_diff_sus
+```{r}
+s4w <- read_csv(
+  "sim_results/vary_weights/4_diff_weights_diff_sus/11_0039/4_summary.csv")
+s4w_full<- readRDS(
+  "sim_results/vary_weights/4_diff_weights_diff_sus/11_0039/4_full.rds")
+```
+
+```{r}
+ggplot(s4w, aes(x = commWeightKids, y = prop_cox_yes_full)) +
+  geom_line(color = "pink3") +
+  geom_point(color = "pink3") +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  scale_x_continuous(breaks = unique(s4w$commWeightKids)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Coverage of the true effect (0.039) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: All",
+    x = expression(textstyle("Time spent outside the cluster (children) / community weight") ~omega),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s4w, aes(x = commWeightKids, y = prop_cox_yes_adults)) +
+  geom_line(color = "pink3") +
+  geom_point(color = "pink3") +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  scale_x_continuous(breaks = unique(s4w$commWeightKids)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Coverage of the true effect (0.039) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Adults",
+    x = expression(textstyle("Time spent outside the cluster (children) / community weight") ~omega),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s4w, aes(x = commWeightKids, y = prop_cox_yes_kids)) +
+  geom_line(color = "pink3") +
+  geom_point(color = "pink3") +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  scale_x_continuous(breaks = unique(s4w$commWeightKids)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Coverage of the true effect (0.039) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Children",
+    x = expression(textstyle("Time spent outside the cluster (children) / community weight") ~omega),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+Estimated Effectiveness
+```{r}
+ggplot(s4w, aes(x = commWeightKids, y = cox_mean_full)) +
+  geom_point(shape = 21, color = "pink3", stroke = 1) +
+  geom_line(color = "pink3", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_full, ymax = cox_upr_mean_full), width = 0.02, color = "pink3") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  labs(
+    title = "Cox estimated efficacy of the intervention vs. time spent in city",
+    subtitle = "True efficacy = 3.9%; Population: All",
+     x = expression(textstyle("Time spent outside the cluster / community weight (children) ") ~omega),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s4w$commWeightKids)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s4w, aes(x = commWeightKids, y = cox_mean_adults)) +
+  geom_point(shape = 21, color = "pink3", stroke = 1) +
+  geom_line(color = "pink3", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_adults, ymax = cox_upr_mean_adults), width = 0.02, color = "pink3") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  labs(
+    title = "Cox estimated efficacy of the intervention vs. time spent in city",
+    subtitle = "True efficacy = 3.9%; Population: Adults",
+     x = expression(textstyle("Time spent outside the cluster / community weight (children) ") ~omega),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s4w$commWeightKids)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s4w, aes(x = commWeightKids, y = cox_mean_kids)) +
+  geom_point(shape = 21, color = "pink3", stroke = 1) +
+  geom_line(color = "pink3", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_kids, ymax = cox_upr_mean_kids), width = 0.02, color = "pink3") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  labs(
+    title = "Cox estimated efficacy of the intervention vs. time spent in city",
+    subtitle = "True efficacy = 3.9%; Population: Children",
+     x = expression(textstyle("Time spent outside the cluster / community weight (children) ") ~omega),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s4w$commWeightKids)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+```
 
 # Higher Efficacy and AlphaBeta 0.9
 ## No Weights
 ### Base
 ```{r}
-base_he <- read_csv(
-  "sim_results/vary_gamma_0909he/no_weights/base_summary.csv")
-base_he <- base_he %>%
-  filter(block == 0.9)
-base_he_full <- readRDS("sim_results/vary_gamma_0909he/no_weights/base_full.rds")
-base_he_full <- base_he_full %>%
-  filter(block == 0.9)
+base_he <- read_csv("sim_results/fixed_alpha_beta_1_1/no_weights/base_summary_0909.csv") 
+base_he <- base_he %>% filter(block == 0.9)
+
+base_he_full <- readRDS("sim_results/fixed_alpha_beta_1_1/no_weights/base_full_0909.rds")
 ```
 
 ```{r}
-ggplot(base_he, aes(x = gamma, y = prop_pois_yes)) +
+ggplot(base_he, aes(x = gamma, y = prop_cox_yes_full)) +
   geom_line() +
   geom_point() +
   scale_x_continuous(breaks = unique(base_he$gamma)) +
@@ -888,7 +1748,37 @@ ggplot(base_he, aes(x = gamma, y = prop_pois_yes)) +
                      limits = c(0,1)) +
   labs(
     title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
-    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 0.9, ") ~ beta ~ textstyle (" = 0.9")),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: All",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(base_he, aes(x = gamma, y = prop_cox_yes_adults)) +
+  geom_line() +
+  geom_point() +
+  scale_x_continuous(breaks = unique(base_he$gamma)) +
+  scale_y_continuous(breaks = seq(0.1, 1, by = 0.1),
+                     limits = c(0.1,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Adults",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(base_he, aes(x = gamma, y = prop_cox_yes_kids)) +
+  geom_line() +
+  geom_point() +
+  scale_x_continuous(breaks = unique(base_he$gamma)) +
+  scale_y_continuous(breaks = seq(0.1, 1, by = 0.1),
+                     limits = c(0.1,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Children",
     x = expression(gamma~" (transmission multiplier)"),
     y = "Proportion of runs with true effect inside 95% CI",
   ) +
@@ -898,19 +1788,63 @@ ggplot(base_he, aes(x = gamma, y = prop_pois_yes)) +
 
 Estimated Effectiveness
 ```{r}
-ggplot(base_he, aes(x = gamma, y = pois_mean)) +
+ggplot(base_he, aes(x = gamma, y = cox_mean_full)) +
   geom_point(shape = 21, color = "black", stroke = 1) +
   geom_line(color = "black", linetype = "solid") +
-  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "black") +
-  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  geom_errorbar(aes(ymin = cox_lwr_mean_adults, ymax = cox_upr_mean_adults), width = 0.02, color = "black") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
   labs(
-    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
-    subtitle = "True efficacy = 25%",
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%; Population: All",
     x = expression(gamma),
     y = "Estimated efficacy (1 – HR)"
   ) +
-  scale_x_continuous(breaks = unique(base_he$gamma)) +
+  scale_x_continuous(breaks = unique(base_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(base_he, aes(x = gamma, y = cox_mean_adults)) +
+  geom_point(shape = 21, color = "black", stroke = 1) +
+  geom_line(color = "black", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_adults, ymax = cox_upr_mean_adults), width = 0.02, color = "black") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%; Population: Adults",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(base_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(base_he, aes(x = gamma, y = cox_mean_kids)) +
+  geom_point(shape = 21, color = "black", stroke = 1) +
+  geom_line(color = "black", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_kids, ymax = cox_upr_mean_kids), width = 0.02, color = "black") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%; Population: Children",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(base_11$gamma)) +
 #  scale_y_continuous(limits = c(0, 0.12)) + 
   theme_classic() +
   theme(
@@ -924,26 +1858,51 @@ ggplot(base_he, aes(x = gamma, y = pois_mean)) +
 
 ### Differential Suscepbility
 ```{r}
-ds_he <- read_csv(
-  "sim_results/vary_gamma_0909he/no_weights/ds_summary.csv")
-ds_he <- ds_he %>% 
-  filter(block == 0.9)
-ds_he_full <- readRDS(
-  "sim_results/vary_gamma_0909he/no_weights/ds_full.rds")
-ds_he_full <- ds_he_full %>% 
-  filter(block == 0.9)
+ds_he <- read_csv("sim_results/fixed_alpha_beta_1_1/no_weights/ds_summary_0909.csv")
+ds_he <- ds_he %>% filter(block == 0.9)
+ds_he_full <- readRDS("sim_results/fixed_alpha_beta_1_1/no_weights/ds_full_0909.rds")
 ```
 
 ```{r}
-ggplot(ds_he, aes(x = gamma, y = prop_pois_yes)) +
+ggplot(ds_he, aes(x = gamma, y = prop_cox_yes_full)) +
   geom_line(color = "darkorchid") +
   geom_point(color = "darkorchid") +
-  scale_x_continuous(breaks = unique(ds_he$gamma)) +
+  scale_x_continuous(breaks = unique(ds_11$gamma)) +
   scale_y_continuous(breaks = seq(0, 1, by = 0.1),
                      limits = c(0,1)) +
   labs(
     title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
-    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 0.9, ") ~ beta ~ textstyle (" = 0.9")),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: All",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(ds_he, aes(x = gamma, y = prop_cox_yes_adults)) +
+  geom_line(color = "darkorchid") +
+  geom_point(color = "darkorchid") +
+  scale_x_continuous(breaks = unique(ds_11$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Adults",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(ds_he, aes(x = gamma, y = prop_cox_yes_kids)) +
+  geom_line(color = "darkorchid") +
+  geom_point(color = "darkorchid") +
+  scale_x_continuous(breaks = unique(ds_11$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Children",
     x = expression(gamma~" (transmission multiplier)"),
     y = "Proportion of runs with true effect inside 95% CI",
   ) +
@@ -953,19 +1912,63 @@ ggplot(ds_he, aes(x = gamma, y = prop_pois_yes)) +
 
 Estimated Effectiveness
 ```{r}
-ggplot(ds_he, aes(x = gamma, y = pois_mean)) +
+ggplot(ds_he, aes(x = gamma, y = pois_mean_full)) +
   geom_point(shape = 21, color = "darkorchid", stroke = 1) +
   geom_line(color = "darkorchid", linetype = "solid") +
-  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "darkorchid") +
-  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  geom_errorbar(aes(ymin = pois_lwr_mean_full, ymax = pois_upr_mean_full), width = 0.02, color = "darkorchid") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
   labs(
     title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
-    subtitle = "True efficacy = 25%",
+    subtitle = "True efficacy = 25%; Population: All",
     x = expression(gamma),
     y = "Estimated efficacy (1 – HR)"
   ) +
-  scale_x_continuous(breaks = unique(base_he$gamma)) +
+  scale_x_continuous(breaks = unique(ds_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(ds_he, aes(x = gamma, y = pois_mean_adults)) +
+  geom_point(shape = 21, color = "darkorchid", stroke = 1) +
+  geom_line(color = "darkorchid", linetype = "solid") +
+  geom_errorbar(aes(ymin = pois_lwr_mean_adults, ymax = pois_upr_mean_adults), width = 0.02, color = "darkorchid") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
+  labs(
+    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%; Population: Adults",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(ds_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(ds_he, aes(x = gamma, y = pois_mean_kids)) +
+  geom_point(shape = 21, color = "darkorchid", stroke = 1) +
+  geom_line(color = "darkorchid", linetype = "solid") +
+  geom_errorbar(aes(ymin = pois_lwr_mean_kids, ymax = pois_upr_mean_kids), width = 0.02, color = "darkorchid") +
+  geom_hline(yintercept = 0.039, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
+  labs(
+    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%; Population: Children",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(ds_11$gamma)) +
 #  scale_y_continuous(limits = c(0, 0.12)) + 
   theme_classic() +
   theme(
@@ -979,26 +1982,57 @@ ggplot(ds_he, aes(x = gamma, y = pois_mean)) +
 ## Weights (Alpha1Beta1)
 ### Situation 1
 ```{r}
-s1_he <- read_csv(
-  "sim_results/vary_gamma_0909he/weights/s1_summary.csv")
-s1_he <- s1_he %>% 
-  filter(block == 0.9)
-s1_he_full <- readRDS(
-  "sim_results/vary_gamma_0909he/weights/s1_full.rds")
-s1_he_full <- s1_he_full %>% 
-  filter(block == 0.9)
+s1_he<- read_csv(
+  "sim_results/fixed_alpha_beta_1_1/weights/adjusted_025/s1_summary.csv")
+s1_he_full<- readRDS(
+  "sim_results/fixed_alpha_beta_1_1/weights/adjusted_025/s1_full.rds")
+```
+
+change gamma
+```{r}
+s1_he$gamma <- s1_he$gamma * 0.5
 ```
 
 ```{r}
-ggplot(s1_he, aes(x = gamma, y = prop_pois_yes)) +
-  geom_line(color = "cadetblue3") +
+ggplot(s1_he, aes(x = gamma, y = prop_cox_yes_full)) +
+    geom_line(color = "cadetblue3") +
   geom_point(color = "cadetblue3") +
-  scale_x_continuous(breaks = unique(s1_he$gamma)) +
+  scale_x_continuous(breaks = unique(s1_11$gamma)) +
   scale_y_continuous(breaks = seq(0, 1, by = 0.1),
                      limits = c(0,1)) +
   labs(
     title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
-    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 0.9, ") ~ beta ~ textstyle (" = 0.9")),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: All",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s1_he, aes(x = gamma, y = prop_cox_yes_adults)) +
+    geom_line(color = "cadetblue3") +
+  geom_point(color = "cadetblue3") +
+  scale_x_continuous(breaks = unique(s1_11$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Adults",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s1_he, aes(x = gamma, y = prop_cox_yes_kids)) +
+    geom_line(color = "cadetblue3") +
+  geom_point(color = "cadetblue3") +
+  scale_x_continuous(breaks = unique(s1_11$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Chindren",
     x = expression(gamma~" (transmission multiplier)"),
     y = "Proportion of runs with true effect inside 95% CI",
   ) +
@@ -1008,19 +2042,63 @@ ggplot(s1_he, aes(x = gamma, y = prop_pois_yes)) +
 
 Estimated Effectiveness
 ```{r}
-ggplot(s1_he, aes(x = gamma, y = pois_mean)) +
+ggplot(s1_he, aes(x = gamma, y = cox_mean_full)) +
   geom_point(shape = 21, color = "cadetblue3", stroke = 1) +
   geom_line(color = "cadetblue3", linetype = "solid") +
-  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "cadetblue3") +
-  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  geom_errorbar(aes(ymin = cox_lwr_mean_full, ymax = cox_upr_mean_full), width = 0.02, color = "cadetblue3") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
   labs(
-    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
-    subtitle = "True efficacy = 25%",
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%: Population: All",
     x = expression(gamma),
     y = "Estimated efficacy (1 – HR)"
   ) +
-  scale_x_continuous(breaks = unique(base_he$gamma)) +
+  scale_x_continuous(breaks = unique(s1_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s1_he, aes(x = gamma, y = cox_mean_adults)) +
+  geom_point(shape = 21, color = "cadetblue3", stroke = 1) +
+  geom_line(color = "cadetblue3", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_adults, ymax = cox_upr_mean_adults), width = 0.02, color = "cadetblue3") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%: Population: Adults",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s1_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s1_he, aes(x = gamma, y = cox_mean_kids)) +
+  geom_point(shape = 21, color = "cadetblue3", stroke = 1) +
+  geom_line(color = "cadetblue3", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_kids, ymax = cox_upr_mean_kids), width = 0.02, color = "cadetblue3") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%: Population: Children",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s1_11$gamma)) +
 #  scale_y_continuous(limits = c(0, 0.12)) + 
   theme_classic() +
   theme(
@@ -1033,26 +2111,57 @@ ggplot(s1_he, aes(x = gamma, y = pois_mean)) +
 
 ### Situation 2
 ```{r}
-s2_he <- read_csv(
-  "sim_results/vary_gamma_0909he/weights/s2_summary.csv")
-s2_he <- s2_he %>% 
-  filter(block == 0.9)
-s2_he_full <- readRDS(
-  "sim_results/vary_gamma_0909he/weights/s2_full.rds")
-s2_he_full <- s2_he_full %>% 
-  filter(block == 0.9)
+s2_he<- read_csv(
+  "sim_results/fixed_alpha_beta_1_1/weights/adjusted_025/s2_summary.csv")
+s2_he_full<- readRDS(
+  "sim_results/fixed_alpha_beta_1_1/weights/adjusted_025/s2_full.rds")
+```
+
+change gamma
+```{r}
+s2_he$gamma <- s2_he$gamma * 0.5
 ```
 
 ```{r}
-ggplot(s2_he, aes(x = gamma, y = prop_pois_yes)) +
+ggplot(s2_he, aes(x = gamma, y = prop_cox_yes_full)) +
   geom_line(color = "chocolate3") +
   geom_point(color = "chocolate3") +
-  scale_x_continuous(breaks = unique(s2_he$gamma)) +
+  scale_x_continuous(breaks = unique(s2_11$gamma)) +
   scale_y_continuous(breaks = seq(0, 1, by = 0.1),
                      limits = c(0,1)) +
   labs(
     title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
-    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 0.9, ") ~ beta ~ textstyle (" = 0.9")),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: All",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s2_he, aes(x = gamma, y = prop_cox_yes_adults)) +
+  geom_line(color = "chocolate3") +
+  geom_point(color = "chocolate3") +
+  scale_x_continuous(breaks = unique(s2_11$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Adults",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s2_he, aes(x = gamma, y = prop_cox_yes_kids)) +
+  geom_line(color = "chocolate3") +
+  geom_point(color = "chocolate3") +
+  scale_x_continuous(breaks = unique(s2_11$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Children",
     x = expression(gamma~" (transmission multiplier)"),
     y = "Proportion of runs with true effect inside 95% CI",
   ) +
@@ -1062,19 +2171,63 @@ ggplot(s2_he, aes(x = gamma, y = prop_pois_yes)) +
 
 Estimated Effectiveness
 ```{r}
-ggplot(s1_he, aes(x = gamma, y = pois_mean)) +
+ggplot(s2_he, aes(x = gamma, y = cox_mean_full)) +
   geom_point(shape = 21, color = "chocolate3", stroke = 1) +
   geom_line(color = "chocolate3", linetype = "solid") +
-  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "chocolate3") +
-  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  geom_errorbar(aes(ymin = pois_lwr_mean_full, ymax = pois_upr_mean_full), width = 0.02, color = "chocolate3") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
   labs(
-    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
-    subtitle = "True efficacy = 25%",
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%; Population: All",
     x = expression(gamma),
     y = "Estimated efficacy (1 – HR)"
   ) +
-  scale_x_continuous(breaks = unique(s1_he$gamma)) +
+  scale_x_continuous(breaks = unique(s2_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s2_he, aes(x = gamma, y = cox_mean_adults)) +
+  geom_point(shape = 21, color = "chocolate3", stroke = 1) +
+  geom_line(color = "chocolate3", linetype = "solid") +
+  geom_errorbar(aes(ymin = pois_lwr_mean_full, ymax = pois_upr_mean_full), width = 0.02, color = "chocolate3") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%; Population: Adults",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s2_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s2_he, aes(x = gamma, y = cox_mean_kids)) +
+  geom_point(shape = 21, color = "chocolate3", stroke = 1) +
+  geom_line(color = "chocolate3", linetype = "solid") +
+  geom_errorbar(aes(ymin = pois_lwr_mean_full, ymax = pois_upr_mean_full), width = 0.02, color = "chocolate3") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%; Population: Children",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s2_11$gamma)) +
 #  scale_y_continuous(limits = c(0, 0.12)) + 
   theme_classic() +
   theme(
@@ -1093,16 +2246,51 @@ s3_he_full<- readRDS(
   "sim_results/fixed_alpha_beta_1_1/weights/adjusted_025/s3_full.rds")
 ```
 
+change gamma
 ```{r}
-ggplot(s3_he, aes(x = gamma, y = prop_cox_yes)) +
+s3_he$gamma <- s3_he$gamma * 0.5
+```
+
+```{r}
+ggplot(s3_he, aes(x = gamma, y = prop_cox_yes_full)) +
   geom_line(color = "darkseagreen3") +
   geom_point(color = "darkseagreen3") +
-  scale_x_continuous(breaks = unique(s3_he$gamma)) +
+  scale_x_continuous(breaks = unique(s3_11$gamma)) +
   scale_y_continuous(breaks = seq(0, 1, by = 0.1),
                      limits = c(0,1)) +
   labs(
     title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
-    subtitle = expression(textstyle("Cox model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 0.9, ") ~ beta ~ textstyle (" = 0.9")),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: All",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s3_he, aes(x = gamma, y = prop_cox_yes_adults)) +
+  geom_line(color = "darkseagreen3") +
+  geom_point(color = "darkseagreen3") +
+  scale_x_continuous(breaks = unique(s3_11$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Adults",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s3_he, aes(x = gamma, y = prop_cox_yes_kids)) +
+  geom_line(color = "darkseagreen3") +
+  geom_point(color = "darkseagreen3") +
+  scale_x_continuous(breaks = unique(s3_11$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.0.25039) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Children",
     x = expression(gamma~" (transmission multiplier)"),
     y = "Proportion of runs with true effect inside 95% CI",
   ) +
@@ -1112,19 +2300,63 @@ ggplot(s3_he, aes(x = gamma, y = prop_cox_yes)) +
 
 Estimated Effectiveness
 ```{r}
-ggplot(s3_he, aes(x = gamma, y = pois_mean)) +
+ggplot(s3_he, aes(x = gamma, y = cox_mean_full)) +
   geom_point(shape = 21, color = "darkseagreen3", stroke = 1) +
   geom_line(color = "darkseagreen3", linetype = "solid") +
-  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "darkseagreen3") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_full, ymax = cox_upr_mean_full), width = 0.02, color = "darkseagreen3") +
   geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
   labs(
-    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
-    subtitle = "True efficacy = 25%",
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%; Population: All",
     x = expression(gamma),
     y = "Estimated efficacy (1 – HR)"
   ) +
-  scale_x_continuous(breaks = unique(s3_he$gamma)) +
+  scale_x_continuous(breaks = unique(s3_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s3_he, aes(x = gamma, y = cox_mean_adults)) +
+  geom_point(shape = 21, color = "darkseagreen3", stroke = 1) +
+  geom_line(color = "darkseagreen3", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_adults, ymax = cox_upr_mean_adults), width = 0.02, color = "darkseagreen3") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%; Population: Adults",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s3_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s3_he, aes(x = gamma, y = cox_mean_kids)) +
+  geom_point(shape = 21, color = "darkseagreen3", stroke = 1) +
+  geom_line(color = "darkseagreen3", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_kids, ymax = cox_upr_mean_kids), width = 0.02, color = "darkseagreen3") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%; Population: Children",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s3_11$gamma)) +
 #  scale_y_continuous(limits = c(0, 0.12)) + 
   theme_classic() +
   theme(
@@ -1137,26 +2369,57 @@ ggplot(s3_he, aes(x = gamma, y = pois_mean)) +
 
 ### Situation 4
 ```{r}
-s4_he <- read_csv(
-  "sim_results/vary_gamma_0909he/weights/s4_summary.csv")
-s4_he <- s4_he %>% 
-  filter(block == 0.9)
-s4_he_full <- readRDS(
-  "sim_results/vary_gamma_0909he/weights/s4_full.rds")
-s4_he_full <- s4_he_full %>% 
-  filter(block == 0.9)
+s4_he<- read_csv(
+  "sim_results/fixed_alpha_beta_1_1/weights/adjusted_025/s4_summary.csv")
+s4_he_full<- readRDS(
+  "sim_results/fixed_alpha_beta_1_1/weights/adjusted_025/s4_full.rds")
+```
+
+change gamma
+```{r}
+s4_he$gamma <- s4_he$gamma * 0.5
 ```
 
 ```{r}
-ggplot(s4_he, aes(x = gamma, y = prop_pois_yes)) +
+ggplot(s4_he, aes(x = gamma, y = prop_cox_yes_full)) +
   geom_line(color = "rosybrown2") +
   geom_point(color = "rosybrown2") +
-  scale_x_continuous(breaks = unique(s4_he$gamma)) +
+  scale_x_continuous(breaks = unique(s4_11$gamma)) +
   scale_y_continuous(breaks = seq(0, 1, by = 0.1),
                      limits = c(0,1)) +
   labs(
     title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
-    subtitle = expression(textstyle("Poisson model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 0.9, ") ~ beta ~ textstyle (" = 0.9")),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: All",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s4_he, aes(x = gamma, y = prop_cox_yes_adults)) +
+  geom_line(color = "rosybrown2") +
+  geom_point(color = "rosybrown2") +
+  scale_x_continuous(breaks = unique(s4_11$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Adults",
+    x = expression(gamma~" (transmission multiplier)"),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s4_he, aes(x = gamma, y = prop_cox_yes_kids)) +
+  geom_line(color = "rosybrown2") +
+  geom_point(color = "rosybrown2") +
+  scale_x_continuous(breaks = unique(s4_11$gamma)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Children",
     x = expression(gamma~" (transmission multiplier)"),
     y = "Proportion of runs with true effect inside 95% CI",
   ) +
@@ -1166,19 +2429,63 @@ ggplot(s4_he, aes(x = gamma, y = prop_pois_yes)) +
 
 Estimated Effectiveness
 ```{r}
-ggplot(s4_he, aes(x = gamma, y = pois_mean)) +
+ggplot(s4_he, aes(x = gamma, y = cox_mean_full)) +
   geom_point(shape = 21, color = "rosybrown2", stroke = 1) +
   geom_line(color = "rosybrown2", linetype = "solid") +
-  geom_errorbar(aes(ymin = pois_lwr_mean, ymax = pois_upr_mean), width = 0.02, color = "rosybrown2") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_full, ymax = cox_upr_mean_full), width = 0.02, color = "rosybrown2") +
   geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
   labs(
-    title = expression(textstyle("Poisson estimated efficacy of the intervention vs. ") ~gamma),
-    subtitle = "True efficacy = 25%",
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%; Population: All",
     x = expression(gamma),
     y = "Estimated efficacy (1 – HR)"
   ) +
-  scale_x_continuous(breaks = unique(s4_he$gamma)) +
+  scale_x_continuous(breaks = unique(s4_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s4_he, aes(x = gamma, y = cox_mean_adults)) +
+  geom_point(shape = 21, color = "rosybrown2", stroke = 1) +
+  geom_line(color = "rosybrown2", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_adults, ymax = cox_upr_mean_adults), width = 0.02, color = "rosybrown2") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%; Population: Adults",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s4_11$gamma)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s4_he, aes(x = gamma, y = cox_mean_kids)) +
+  geom_point(shape = 21, color = "rosybrown2", stroke = 1) +
+  geom_line(color = "rosybrown2", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_kids, ymax = cox_upr_mean_kids), width = 0.02, color = "rosybrown2") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
+    subtitle = "True efficacy = 25%; Population: Children",
+    x = expression(gamma),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s4_11$gamma)) +
 #  scale_y_continuous(limits = c(0, 0.12)) + 
   theme_classic() +
   theme(
@@ -1190,36 +2497,55 @@ ggplot(s4_he, aes(x = gamma, y = pois_mean)) +
 ```
 
 ## Vary Weights
-### 1 total weights, same sus
-
+### 1_total_weights_no_diff_sus
 ```{r}
-s1_3ab <- read_csv(
-  "sim_results/vary_weights/1_total_weights_no_diff_sus/total_no_diff_summary.csv")
-s1_3ab_full <- read_csv(
-  "sim_results/vary_weights/1_total_weights_no_diff_sus/total_no_diff_full.csv")
-```
-
-# Higher Efficacy, 3AlphaBeta
-## Weights
-### Situation 1
-```{r}
-s1_3ab <- read_csv(
-  "sim_results/higher_eff/weights_3ab/s1_summary.csv")
-s1_3ab_full <- readRDS(
-  "sim_results/higher_eff/weights_3ab/s1_full.rds")
+s1w_he <- read_csv(
+  "sim_results/vary_weights/1_total_weights_no_diff_sus/11_025/1_summary.csv")
+s1w_he_full<- readRDS(
+  "sim_results/vary_weights/1_total_weights_no_diff_sus/11_025/1_full.rds")
 ```
 
 ```{r}
-ggplot(s1_3ab, aes(x = gamma, y = prop_cox_yes)) +
-  geom_line(color = "cadetblue3") +
-  geom_point(color = "cadetblue3") +
-  scale_x_continuous(breaks = unique(s1_3ab$gamma)) +
+ggplot(s1w_he, aes(x = commWeight, y = prop_cox_yes_full)) +
+  geom_line(color = "darkslategray4") +
+  geom_point(color = "darkslategray4") +
+  scale_x_continuous(breaks = unique(s1w$commWeight)) +
   scale_y_continuous(breaks = seq(0, 1, by = 0.1),
                      limits = c(0,1)) +
   labs(
-    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
-    subtitle = expression(textstyle("Cox model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 3, ") ~ beta ~ textstyle (" = 3")),
-    x = expression(gamma~" (transmission multiplier)"),
+    title = "Coverage of the true effect (0.25) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: All",
+    x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s1w_he, aes(x = commWeight, y = prop_cox_yes_adults)) +
+  geom_line(color = "darkslategray4") +
+  geom_point(color = "darkslategray4") +
+  scale_x_continuous(breaks = unique(s1w$commWeight)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Coverage of the true effect (0.25) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Adults",
+    x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s1w_he, aes(x = commWeight, y = prop_cox_yes_kids)) +
+  geom_line(color = "darkslategray4") +
+  geom_point(color = "darkslategray4") +
+  scale_x_continuous(breaks = unique(s1w$commWeight)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Coverage of the true effect (0.25) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Children",
+    x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
     y = "Proportion of runs with true effect inside 95% CI",
   ) +
   theme_classic() +
@@ -1228,19 +2554,19 @@ ggplot(s1_3ab, aes(x = gamma, y = prop_cox_yes)) +
 
 Estimated Effectiveness
 ```{r}
-ggplot(s1_3ab, aes(x = gamma, y = cox_mean)) +
-  geom_point(shape = 21, color = "cadetblue3", stroke = 1) +
-  geom_line(color = "cadetblue3", linetype = "solid") +
-  geom_errorbar(aes(ymin = cox_lwr_mean, ymax = cox_upr_mean), width = 0.02, color = "cadetblue3") +
-  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", linewidth = 0.5) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
+ggplot(s1w_he, aes(x = commWeight, y = cox_mean_full)) +
+  geom_point(shape = 21, color = "darkslategray4", stroke = 1) +
+  geom_line(color = "darkslategray4", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_full, ymax = cox_upr_mean_full), width = 0.02, color = "darkslategray4") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
   labs(
-    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
-    subtitle = "True efficacy = 25%",
-    x = expression(gamma),
+    title = "Cox estimated efficacy of the intervention vs. time spent in community",
+    subtitle = "True efficacy = 25%; Population: All",
+     x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
     y = "Estimated efficacy (1 – HR)"
   ) +
-  scale_x_continuous(breaks = unique(s1_3ab$gamma)) +
+  scale_x_continuous(breaks = unique(s1w$commWeight)) +
 #  scale_y_continuous(limits = c(0, 0.12)) + 
   theme_classic() +
   theme(
@@ -1249,48 +2575,20 @@ ggplot(s1_3ab, aes(x = gamma, y = cox_mean)) +
     axis.title   = element_text(size = 12),
     legend.position = "bottom"
   )
-```
 
-### Situation 2
-```{r}
-s2_3ab <- read_csv(
-  "sim_results/higher_eff/weights_3ab/s2_summary.csv")
-s2_3ab_full <- readRDS(
-  "sim_results/higher_eff/weights_3ab/s2_full.rds")
-```
-
-```{r}
-ggplot(s2_3ab, aes(x = gamma, y = prop_cox_yes)) +
-  geom_line(color = "chocolate3") +
-  geom_point(color = "chocolate3") +
-  scale_x_continuous(breaks = unique(s2_3ab$gamma)) +
-  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
-                     limits = c(0,1)) +
+ggplot(s1w_he, aes(x = commWeight, y = cox_mean_adults)) +
+  geom_point(shape = 21, color = "darkslategray4", stroke = 1) +
+  geom_line(color = "darkslategray4", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_adults, ymax = cox_upr_mean_adults), width = 0.02, color = "darkslategray4") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
   labs(
-    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
-    subtitle = expression(textstyle("Cox model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 3, ") ~ beta ~ textstyle (" = 3")),
-    x = expression(gamma~" (transmission multiplier)"),
-    y = "Proportion of runs with true effect inside 95% CI",
-  ) +
-  theme_classic() +
-  theme(legend.position = "bottom")
-```
-
-Estimated Effectiveness
-```{r}
-ggplot(s2_3ab, aes(x = gamma, y = cox_mean)) +
-  geom_point(shape = 21, color = "chocolate3", stroke = 1) +
-  geom_line(color = "chocolate3", linetype = "solid") +
-  geom_errorbar(aes(ymin = cox_lwr_mean, ymax = cox_upr_mean), width = 0.02, color = "chocolate3") +
-  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", linewidth = 0.5) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
-  labs(
-    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
-    subtitle = "True efficacy = 25%",
-    x = expression(gamma),
+    title = "Cox estimated efficacy of the intervention vs. time spent in community",
+    subtitle = "True efficacy = 25%; Population: Adults",
+     x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
     y = "Estimated efficacy (1 – HR)"
   ) +
-  scale_x_continuous(breaks = unique(s2_3ab$gamma)) +
+  scale_x_continuous(breaks = unique(s1w$commWeight)) +
 #  scale_y_continuous(limits = c(0, 0.12)) + 
   theme_classic() +
   theme(
@@ -1299,48 +2597,20 @@ ggplot(s2_3ab, aes(x = gamma, y = cox_mean)) +
     axis.title   = element_text(size = 12),
     legend.position = "bottom"
   )
-```
 
-### Situation 3
-```{r}
-s3_3ab <- read_csv(
-  "sim_results/higher_eff/weights_3ab/s3_summary.csv")
-s3_3ab_full <- readRDS(
-  "sim_results/higher_eff/weights_3ab/s3_full.rds")
-```
-
-```{r}
-ggplot(s3_3ab, aes(x = gamma, y = prop_cox_yes)) +
-  geom_line(color = "darkseagreen3") +
-  geom_point(color = "darkseagreen3") +
-  scale_x_continuous(breaks = unique(s3_3ab$gamma)) +
-  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
-                     limits = c(0,1)) +
+ggplot(s1w_he, aes(x = commWeight, y = cox_mean_kids)) +
+  geom_point(shape = 21, color = "darkslategray4", stroke = 1) +
+  geom_line(color = "darkslategray4", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_kids, ymax = cox_upr_mean_kids), width = 0.02, color = "darkslategray4") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
   labs(
-    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
-    subtitle = expression(textstyle("Cox model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 3, ") ~ beta ~ textstyle (" = 3")),
-    x = expression(gamma~" (transmission multiplier)"),
-    y = "Proportion of runs with true effect inside 95% CI",
-  ) +
-  theme_classic() +
-  theme(legend.position = "bottom")
-```
-
-Estimated Effectiveness
-```{r}
-ggplot(s3_3ab, aes(x = gamma, y = cox_mean)) +
-  geom_point(shape = 21, color = "darkseagreen3", stroke = 1) +
-  geom_line(color = "darkseagreen3", linetype = "solid") +
-  geom_errorbar(aes(ymin = cox_lwr_mean, ymax = cox_upr_mean), width = 0.02, color = "darkseagreen3") +
-  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", linewidth = 0.5) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
-  labs(
-    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
-    subtitle = "True efficacy = 25%",
-    x = expression(gamma),
+    title = "Cox estimated efficacy of the intervention vs. time spent in community",
+    subtitle = "True efficacy = 25%; Population: Children",
+     x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
     y = "Estimated efficacy (1 – HR)"
   ) +
-  scale_x_continuous(breaks = unique(s3_3ab$gamma)) +
+  scale_x_continuous(breaks = unique(s1w$commWeight)) +
 #  scale_y_continuous(limits = c(0, 0.12)) + 
   theme_classic() +
   theme(
@@ -1352,25 +2622,55 @@ ggplot(s3_3ab, aes(x = gamma, y = cox_mean)) +
 ```
 
 
-### Situation 4
+### 2_total_weights_diff_sus
 ```{r}
-s4_3ab <- read_csv(
-  "sim_results/higher_eff/weights_3ab/s4_summary.csv")
-s4_3ab_full <- readRDS(
-  "sim_results/higher_eff/weights_3ab/s4_full.rds")
+s2w_he <- read_csv(
+  "sim_results/vary_weights/2_total_weights_diff_sus/11_025/2_summary.csv")
+s2w_he_full<- readRDS(
+  "sim_results/vary_weights/2_total_weights_diff_sus/11_025/2_full.rds")
 ```
 
 ```{r}
-ggplot(s4_3ab, aes(x = gamma, y = prop_cox_yes)) +
-  geom_line(color = "rosybrown2") +
-  geom_point(color = "rosybrown2") +
-  scale_x_continuous(breaks = unique(s4_3ab$gamma)) +
+ggplot(s2w_he, aes(x = commWeight, y = prop_cox_yes_full)) +
+  geom_line(color = "sienna4") +
+  geom_point(color = "sienna4") +
+  scale_x_continuous(breaks = unique(s2w$commWeight)) +
   scale_y_continuous(breaks = seq(0, 1, by = 0.1),
                      limits = c(0,1)) +
   labs(
-    title = expression(textstyle("Coverage of the true effect (0.25) by") ~gamma),
-    subtitle = expression(textstyle("Cox model – proportion of runs whose 95% CI contains the truth; ") ~ alpha ~ textstyle(" = 3, ") ~ beta ~ textstyle (" = 3")),
-    x = expression(gamma~" (transmission multiplier)"),
+    title = "Coverage of the true effect (0.25) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: All",
+    x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s2w_he, aes(x = commWeight, y = prop_cox_yes_adults)) +
+  geom_line(color = "sienna4") +
+  geom_point(color = "sienna4") +
+  scale_x_continuous(breaks = unique(s2w$commWeight)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Coverage of the true effect (0.25) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Adults",
+    x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s2w_he, aes(x = commWeight, y = prop_cox_yes_kids)) +
+  geom_line(color = "sienna4") +
+  geom_point(color = "sienna4") +
+  scale_x_continuous(breaks = unique(s2w$commWeight)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Coverage of the true effect (0.25) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Children",
+    x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
     y = "Proportion of runs with true effect inside 95% CI",
   ) +
   theme_classic() +
@@ -1379,19 +2679,63 @@ ggplot(s4_3ab, aes(x = gamma, y = prop_cox_yes)) +
 
 Estimated Effectiveness
 ```{r}
-ggplot(s4_3ab, aes(x = gamma, y = cox_mean)) +
-  geom_point(shape = 21, color = "rosybrown2", stroke = 1) +
-  geom_line(color = "rosybrown2", linetype = "solid") +
-  geom_errorbar(aes(ymin = cox_lwr_mean, ymax = cox_upr_mean), width = 0.02, color = "rosybrown2") +
-  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", linewidth = 0.5) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", linewidth = 0.5) +
+ggplot(s2w_he, aes(x = commWeight, y = cox_mean_full)) +
+  geom_point(shape = 21, color = "sienna4", stroke = 1) +
+  geom_line(color = "sienna4", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_full, ymax = cox_upr_mean_full), width = 0.02, color = "sienna4") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
   labs(
-    title = expression(textstyle("Cox estimated efficacy of the intervention vs. ") ~gamma),
-    subtitle = "True efficacy = 25%",
-    x = expression(gamma),
+    title = "Cox estimated efficacy of the intervention vs. time spent in community",
+    subtitle = "True efficacy = 25%; Population: All",
+     x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
     y = "Estimated efficacy (1 – HR)"
   ) +
-  scale_x_continuous(breaks = unique(s4_3ab$gamma)) +
+  scale_x_continuous(breaks = unique(s2w$commWeight)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s2w_he, aes(x = commWeight, y = cox_mean_adults)) +
+  geom_point(shape = 21, color = "sienna4", stroke = 1) +
+  geom_line(color = "sienna4", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_adults, ymax = cox_upr_mean_adults), width = 0.02, color = "sienna4") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = "Cox estimated efficacy of the intervention vs. time spent in community",
+    subtitle = "True efficacy = 25%; Population: Adults",
+     x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s2w$commWeight)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s2w_he, aes(x = commWeight, y = cox_mean_kids)) +
+  geom_point(shape = 21, color = "sienna4", stroke = 1) +
+  geom_line(color = "sienna4", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_kids, ymax = cox_upr_mean_kids), width = 0.02, color = "sienna4") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  labs(
+    title = "Cox estimated efficacy of the intervention vs. time spent in community",
+    subtitle = "True efficacy = 25%; Population: Children",
+     x = expression(textstyle("Time spent outside the cluster / community weight") ~omega),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s2w$commWeight)) +
 #  scale_y_continuous(limits = c(0, 0.12)) + 
   theme_classic() +
   theme(
@@ -1401,3 +2745,304 @@ ggplot(s4_3ab, aes(x = gamma, y = cox_mean)) +
     legend.position = "bottom"
   )
 ```
+
+
+### 3_diff_weights_no_diff_sus
+```{r}
+s3w_he <- read_csv(
+  "sim_results/vary_weights/3_diff_weights_no_diff_sus/11_025/3_summary.csv")
+s3w_he_full<- readRDS(
+  "sim_results/vary_weights/3_diff_weights_no_diff_sus/11_025/3_full.rds")
+```
+
+```{r}
+ggplot(s3w_he, aes(x = commWeightKids, y = prop_cox_yes_full)) +
+  geom_line(color = "palegreen4") +
+  geom_point(color = "palegreen4") +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  scale_x_continuous(breaks = unique(s3w$commWeightKids)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Coverage of the true effect (0.25) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: All",
+    x = expression(textstyle("Time spent outside the cluster (children) / community weight") ~omega),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s3w_he, aes(x = commWeightKids, y = prop_cox_yes_adults)) +
+  geom_line(color = "palegreen4") +
+  geom_point(color = "palegreen4") +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  scale_x_continuous(breaks = unique(s3w$commWeightKids)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Coverage of the true effect (0.25) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Adults",
+    x = expression(textstyle("Time spent outside the cluster (children) / community weight") ~omega),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s3w_he, aes(x = commWeightKids, y = prop_cox_yes_kids)) +
+  geom_line(color = "palegreen4") +
+  geom_point(color = "palegreen4") +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  scale_x_continuous(breaks = unique(s3w$commWeightKids)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Coverage of the true effect (0.25) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Children",
+    x = expression(textstyle("Time spent outside the cluster (children) / community weight") ~omega),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+Estimated Effectiveness
+```{r}
+ggplot(s3w_he, aes(x = commWeightKids, y = cox_mean_full)) +
+  geom_point(shape = 21, color = "palegreen4", stroke = 1) +
+  geom_line(color = "palegreen4", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_full, ymax = cox_upr_mean_full), width = 0.02, color = "palegreen4") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  labs(
+    title = "Cox estimated efficacy of the intervention vs. time spent in city",
+    subtitle = "True efficacy = 25%; Population: All",
+     x = expression(textstyle("Time spent outside the cluster / community weight (children) ") ~omega),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s3w$commWeightKids)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s3w_he, aes(x = commWeightKids, y = cox_mean_adults)) +
+  geom_point(shape = 21, color = "palegreen4", stroke = 1) +
+  geom_line(color = "palegreen4", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_adults, ymax = cox_upr_mean_adults), width = 0.02, color = "palegreen4") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  labs(
+    title = "Cox estimated efficacy of the intervention vs. time spent in city",
+    subtitle = "True efficacy = 25%; Population: Adults",
+     x = expression(textstyle("Time spent outside the cluster / community weight (children) ") ~omega),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s3w$commWeightKids)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s3w_he, aes(x = commWeightKids, y = cox_mean_kids)) +
+  geom_point(shape = 21, color = "palegreen4", stroke = 1) +
+  geom_line(color = "palegreen4", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_kids, ymax = cox_upr_mean_kids), width = 0.02, color = "palegreen4") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  labs(
+    title = "Cox estimated efficacy of the intervention vs. time spent in city",
+    subtitle = "True efficacy = 25%; Population: Children",
+     x = expression(textstyle("Time spent outside the cluster / community weight (children) ") ~omega),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s3w$commWeightKids)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+```
+
+### 4_diff_weights_diff_sus
+```{r}
+s4w_he <- read_csv(
+  "sim_results/vary_weights/4_diff_weights_diff_sus/11_025/4_summary.csv")
+s4w_he_full<- readRDS(
+  "sim_results/vary_weights/4_diff_weights_diff_sus/11_025/4_full.rds")
+```
+
+```{r}
+ggplot(s4w_he, aes(x = commWeightKids, y = prop_cox_yes_full)) +
+  geom_line(color = "pink3") +
+  geom_point(color = "pink3") +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  scale_x_continuous(breaks = unique(s4w$commWeightKids)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Coverage of the true effect (0.25) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: All",
+    x = expression(textstyle("Time spent outside the cluster (children) / community weight") ~omega),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s4w_he, aes(x = commWeightKids, y = prop_cox_yes_adults)) +
+  geom_line(color = "pink3") +
+  geom_point(color = "pink3") +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  scale_x_continuous(breaks = unique(s4w$commWeightKids)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Coverage of the true effect (0.25) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Adults",
+    x = expression(textstyle("Time spent outside the cluster (children) / community weight") ~omega),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+ggplot(s4w_he, aes(x = commWeightKids, y = prop_cox_yes_kids)) +
+  geom_line(color = "pink3") +
+  geom_point(color = "pink3") +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  scale_x_continuous(breaks = unique(s4w$commWeightKids)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1),
+                     limits = c(0,1)) +
+  labs(
+    title = "Coverage of the true effect (0.25) by time spent in the city",
+    subtitle = "Cox model – proportion of runs whose 95% CI contains the truth; Population: Children",
+    x = expression(textstyle("Time spent outside the cluster (children) / community weight") ~omega),
+    y = "Proportion of runs with true effect inside 95% CI",
+  ) +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+Estimated Effectiveness
+```{r}
+ggplot(s4w_he, aes(x = commWeightKids, y = cox_mean_full)) +
+  geom_point(shape = 21, color = "pink3", stroke = 1) +
+  geom_line(color = "pink3", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_full, ymax = cox_upr_mean_full), width = 0.02, color = "pink3") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  labs(
+    title = "Cox estimated efficacy of the intervention vs. time spent in city",
+    subtitle = "True efficacy = 25%; Population: All",
+     x = expression(textstyle("Time spent outside the cluster / community weight (children) ") ~omega),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s4w$commWeightKids)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s4w_he, aes(x = commWeightKids, y = cox_mean_adults)) +
+  geom_point(shape = 21, color = "pink3", stroke = 1) +
+  geom_line(color = "pink3", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_adults, ymax = cox_upr_mean_adults), width = 0.02, color = "pink3") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  labs(
+    title = "Cox estimated efficacy of the intervention vs. time spent in city",
+    subtitle = "True efficacy = 25%; Population: Adults",
+     x = expression(textstyle("Time spent outside the cluster / community weight (children) ") ~omega),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s4w$commWeightKids)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(s4w_he, aes(x = commWeightKids, y = cox_mean_kids)) +
+  geom_point(shape = 21, color = "pink3", stroke = 1) +
+  geom_line(color = "pink3", linetype = "solid") +
+  geom_errorbar(aes(ymin = cox_lwr_mean_kids, ymax = cox_upr_mean_kids), width = 0.02, color = "pink3") +
+  geom_hline(yintercept = 0.25, linetype = "solid", color = "red", size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkblue", size = 0.5) +
+  facet_wrap(~commWeightAdults,
+             labeller = labeller(commWeightAdults = as_labeller(function(x) paste0("Community weight (Adults): ", x))),
+             scales = "free_y",
+             nrow = 1) +
+  labs(
+    title = "Cox estimated efficacy of the intervention vs. time spent in city",
+    subtitle = "True efficacy = 25%; Population: Children",
+     x = expression(textstyle("Time spent outside the cluster / community weight (children) ") ~omega),
+    y = "Estimated efficacy (1 – HR)"
+  ) +
+  scale_x_continuous(breaks = unique(s4w$commWeightKids)) +
+#  scale_y_continuous(limits = c(0, 0.12)) + 
+  theme_classic() +
+  theme(
+    plot.title   = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    legend.position = "bottom"
+  )
+```
+
+
+
+

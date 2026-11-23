@@ -100,26 +100,26 @@ suspected <- here::here("data", "TIRS_SINAVE_combined22_23_blockID.csv") %>%
 # Cases only (no negative diagnoses)
 cases <- suspected %>% 
   filter(Diagnosis != "Negativo") %>% 
-  filter(Comentario != "Negativo")
+  filter(Comentario != "Negativo") %>% 
+  # only 2023, only dengue
+  filter((str_detect(Diagnosis, "DENV") | str_detect(Diagnosis, "DENGUE"))
+         & Year == 2023) 
 
-# missing data?
-sum(is.na(cases$MZTIRS))
-which(is.na(cases$MZTIRS))
-cases[63,]
+# some duplicates?
 
-cases <- cases %>% 
-  mutate(block_id = ifelse(is.na(MZTIRS), str_sub(ID, 3, 4), MZTIRS))
+cases %>% count(ID) %>% filter(n > 1)
+cases %>% filter(ID == "401114A") # duplicate
 ```
 
 Format to match c.positives.alpha.txt
 ```{r}
 positives <- cases %>% 
   # IDperson, IDblock, IDcluster, date_symptoms, TIRS_arm, coordinates
-  select(ID, block_id, CLUSTER, Week_onset, Arm_1TIRS, lon, lat) %>% 
+  dplyr::select(ID, block_id, CLUSTER, Week_onset, Arm_1TIRS) %>% 
   rename(person_id = ID,
          cluster_id = CLUSTER,
-         week_sympt_onset = Week_onset,
-         trial_arm = Arm_1TIRS)
+         trial_arm = Arm_1TIRS,
+         week_sympt_onset = Week_onset)
 
 ```
 

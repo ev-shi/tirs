@@ -14,115 +14,139 @@ library(ggplot2)
 library(gridExtra)
 ```
 
-# Data
-Read in data
+# Simulated Data
 ```{r}
-# ## Population of Mérida + Kanasín (old)
-yuc_pop <- read.csv("data/SINAVE_Data/RESAGEBURB2020 - 31 Yucatán.csv")
-
-merida_pop <- read.csv("data/yuc_pop/yuc_pop_all.csv") %>% # all of yucatan
-  filter(MUN == 50 | MUN == 41 | MUN == 101) # only metro merida
-
-## Mérida + Kanasín shapefile from INEGI (eem - Block Polygons)
-merida_block_sf <- st_read(dsn = here("31_yucatan_2020/conjunto_de_datos"),
-                    layer = "31m")
-merida_block_sf <- merida_block_sf %>% 
-  filter(CVE_MUN == "041" | CVE_MUN == "050" | CVE_MUN == "100")
-
-## Mérida + Kanasín shapefile from INEGI (eea - Basic Urban Geostatistical Areas)
-merida_cluster_sf <- st_read(dsn = here("31_yucatan_2020/conjunto_de_datos"),
-                    layer = "31a")
-merida_cluster_sf <- merida_cluster_sf %>% 
-  filter(CVE_MUN == "041" | CVE_MUN == "050")
-
-## SINAVE case data
-sinave_all_cases <- here::here("data", "SINAVE_Data", 
-                       "datos_abiertos_dengue_061223.csv") %>%
+sim_pop <- here::here("sim_pops", "blockRe0p60_clusterRe0p50_gamma2p00_sim1.csv") %>%
   rio::import() %>% 
   dplyr::as_tibble()
+```
 
-## Cases Shapefile
-cases_sf <- st_read(dsn = here("data"), 
-                 layer = "TIRS_SINAVE_22_23")
-
-## Cases by TIRS block (not a shapefile, will add this info onto the shapefile)
-cases_tirs_info <- read_csv("data/TIRS_SINAVE_combined22_23_blockID.csv")
+```{r}
+sim_cases <- sim_pop %>% 
+  filter(infected == 1)
+```
 
 
-## TIRS Clusters Shapefile
-clusters_sf <- st_read(dsn = here("data"),
-                    layer = "Cluster final 2021 actualizado")
+## Cleaning
+### all cases
+```{r}
+infected <- sim_cases %>% 
+  mutate(symptom_onset = tau - round(runif(1, 3, 10), 0)) %>% 
+  select(ID, Cluster, cluster_block, TIRS, symptom_onset)
+```
+write to txt file
+```{r}
+write.table(infected, file = "infected.txt", sep = " ", row.names = FALSE,
+            col.names = FALSE)
+```
+1248 infected people only
 
-## entomological data
-ento <- here::here("data", "TIRS_database_entom_summ.csv") %>%
+ok wow i cannot do this many people it would take way too long
+i'll try with....100? 200?
+```{r}
+sample <- sample(infected$ID, 100)
+hundred_pos <- infected %>% 
+  filter(ID %in% sample)
+```
+write to txt file
+```{r}
+write.table(hundred_pos, file = "hundred.txt", sep = " ", row.names = FALSE,
+            col.names = FALSE)
+```
+
+
+### reported cases only:
+```{r}
+sim_reported <- sim_pop %>% 
+  filter(reported == 1)
+```
+
+Match c.positives.alpha.txt: 
+IDperson
+IDblock
+IDcluster
+TIRS
+symptom_onset
+```{r}
+positives <- sim_cases %>% 
+  mutate(symptom_onset = tau - round(runif(1, 3, 10), 0)) %>% 
+  select(ID, Cluster, cluster_block, TIRS, symptom_onset)
+```
+
+uhhh just try with a small subset
+```{r}
+sample <- sample(positives$ID, 10)
+ten_pos <- positives %>% 
+  filter(ID %in% sample)
+```
+
+write to txt file
+```{r}
+write.table(positives, file = "positives.txt", sep = " ", row.names = FALSE,
+            col.names = FALSE)
+```
+
+# Real Data
+import data:
+```{r}
+## cases
+suspected <- here::here("data", "TIRS_SINAVE_combined22_23_blockID.csv") %>%
   rio::import() %>% 
   dplyr::as_tibble()
-
-# make sure all sf files have the same coordinates 
-merida_cluster_sf <- st_transform(merida_cluster_sf, st_crs(merida_block_sf))
-cases_sf <- st_transform(cases_sf, st_crs(merida_block_sf))
-clusters_sf <- st_transform(clusters_sf, st_crs(merida_block_sf))
 ```
 
-Formatting the data for the model
+## Cleaning
 ```{r}
-all <- cases_tirs_info %>% 
-  #head(7) %>% 
-  mutate(id = 1:833,
-         block_id = ifelse(is.na(MZTIRS), CVE_MZA, MZTIRS),
-         cluster_id = CLUSTER,
-         week_onset = Week_onset) %>% 
-  dplyr::select(id, block_id, cluster_id, Week_onset, week_onset)
-v <- c(rep(-1, 9), rep(-1, 3), 1)
-neg_vax <- as.data.frame(matrix(v, nrow = 833, ncol = length(v), byrow = TRUE))
-all <- cbind(all, neg_vax)
-all <- all %>% 
-  mutate(vax_date = week_onset - 1) %>% 
-  dplyr::select(id, block_id, cluster_id, Week_onset, week_onset, 
-                V1, V2, V3, V4, V5, V6, V7, V8, V9, vax_date, 
-                V11, V12, V13)
-write.table(all, file = "all.txt", sep = " ", row.names = FALSE,
-            col.names = FALSE)
+# Cases only (no negative diagnoses)
+cases <- suspected %>% 
+  filter(Diagnosis != "Negativo") %>% 
+  filter(Comentario != "Negativo") %>% 
+  # only 2023, only dengue
+  filter((str_detect(Diagnosis, "DENV") | str_detect(Diagnosis, "DENGUE"))
+         & Year == 2023) %>% 
+  # some duplicates (7), take only the first row of each ID
+  group_by(ID) %>% 
+  slice_head(n = 1) %>% 
+  ungroup() %>% 
+  mutate(block_id = ifelse(is.na(MZTIRS), CVE_MZA, MZTIRS),
+         person_id = row_number())
 
-inf_time <- all$Week_onset
-inf_times <- matrix(inf_time, nrow = 100, ncol = length(inf_time), 
-                    byrow = TRUE)
-write.table(inf_times, file = "inf_times.txt", sep = " ", row.names = FALSE,
-            col.names = FALSE)
-
-# attendance
-house_attend <- c(0, 0, 1, 0, 0, 1, 1)
-house_attend <- matrix(house_attend, nrow = 7, ncol = 52)
-write.table(house_attend, file = "house_attend.txt", sep = " ", row.names = FALSE,
-            col.names = FALSE)
-
-attend_school <- c(1, 1, 0, 1, 1, 1, 1)
-attend_school <- matrix(attend_school, nrow = 7, ncol = 52)
-write.table(attend_school, file = "attend_school.txt", sep = " ", row.names = FALSE,
-            col.names = FALSE)
-
-attend_comm <- c(1, 1, 0, 1, 1, 0, 1)
-attend_comm <- matrix(attend_comm, nrow = 833, ncol = 52)
-write.table(attend_comm, file = "attend_comm.txt", sep = " ", row.names = FALSE,
-            col.names = FALSE)
-
-attend_hyponeg <- matrix(1, nrow = 50, ncol = 52)
-write.table(attend_hyponeg, file = "attend_hyponeg.txt", sep = " ",
-            row.names = FALSE, col.names = FALSE)
+# # some duplicates?
+# cases %>% count(ID) %>% filter(n > 1)
 ```
 
-# Changes
-- don't need infection times
-- don't need negatives
-- include beta as another parameter !!
+Format to match c.positives.alpha.txt
+```{r}
+positives <- cases %>% 
+  # IDperson, IDblock, IDcluster, date_symptoms, TIRS_arm, coordinates
+  dplyr::select(person_id, block_id, CLUSTER, Week_onset, Arm_1TIRS) %>% 
+  rename(cluster_id = CLUSTER,
+         trial_arm = Arm_1TIRS,
+         week_sympt_onset = Week_onset)
+```
 
-# Output
-1) output of mcmc chains
+write to txt file
+```{r}
+write.table(positives, file = "real_dat_pos.txt", sep = " ", row.names = FALSE,
+            col.names = FALSE)
+```
 
-2) reconstruction of infector-infectee pairs
 
-# Graphs
-## MCMC chains
+# MCMC Results
+Read in results
+```{r}
+chain1 <- here::here("tirs_model", "output", "mcmc.50000.txt") %>%
+  rio::import() %>% 
+  dplyr::as_tibble()
+chain2 <- here::here("tirs_model", "output", "mcmc.50000.txt") %>%
+  rio::import() %>% 
+  dplyr::as_tibble()
+chain3 <- here::here("tirs_model", "output", "mcmc.50000.txt") %>%
+  rio::import() %>% 
+  dplyr::as_tibble()
+```
+
+
 ```{r}
 here()
 mcmc_chains <- read.table(
